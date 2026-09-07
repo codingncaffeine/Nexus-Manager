@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Nexus Manager
+GenericName=Sensor Display Editor
+Comment=Configure the sensor display on a Corsair iCUE NEXUS panel
+Exec=nexus-manager-editor
+Icon=nexus-manager
+Terminal=false
+Categories=System;Monitor;
+Keywords=sensor;monitor;temperature;display;panel;nexus;
+# Must match the application id Avalonia reports, or Wayland compositors will not
+# pair the window with this entry and the taskbar falls back to a generic icon.
+StartupWMClass=nexus-manager-editor

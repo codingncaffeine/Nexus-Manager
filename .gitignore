@@ -1,0 +1,13 @@
+# build output
+bin/
+obj/
+*.user
+
+# local run artefacts
+screen.json
+
+# Reference material and internal notes live OUTSIDE this repo by design, in the
+# parent working directory — not merely ignored here. That includes design
+# plans, Corsair's own screenshots, and their .cuescreens packs and installer.
+# Nothing of Corsair's is redistributable; keeping it out of the tree entirely
+# is safer than trusting a pattern to hold.

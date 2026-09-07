@@ -1,0 +1,33 @@
+[Unit]
+Description=Nexus Manager — sensor display for the Corsair iCUE NEXUS
+Documentation=https://github.com/codingncaffeine/nexus-manager
+# A user service, not system: it reads the logged-in user's config and the
+# uaccess ACL on the hidraw node is granted to the active local seat.
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/nexus-manager daemon
+Restart=on-failure
+RestartSec=5
+
+# The panel is a physical device; if the unit is stopped the display must not be
+# left showing stale readings. The daemon blanks on SIGINT, so send that.
+KillSignal=SIGINT
+TimeoutStopSec=10
+
+# Hardening. The daemon needs hidraw, sysfs and /proc, nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+MemoryDenyWriteExecute=false
+
+[Install]
+WantedBy=graphical-session.target

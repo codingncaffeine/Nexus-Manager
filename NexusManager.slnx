@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/NexusManager.Cli/NexusManager.Cli.csproj" />
+    <Project Path="src/NexusManager.Device/NexusManager.Device.csproj" />
+    <Project Path="src/NexusManager.Editor/NexusManager.Editor.csproj" />
+    <Project Path="src/NexusManager.Render/NexusManager.Render.csproj" />
+    <Project Path="src/NexusManager.Sensors/NexusManager.Sensors.csproj" />
+  </Folder>
+</Solution>
