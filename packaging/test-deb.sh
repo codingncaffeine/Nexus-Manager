@@ -17,7 +17,12 @@ cd "$(dirname "$0")/.."
 DEB="${1:-packaging/out/nexus-manager.deb}"
 [ -f "$DEB" ] || { echo "No such package: $DEB" >&2; exit 2; }
 
-ROOT=$(mktemp -d)
+# ⛔ NOT under /tmp. The packaged unit sets PrivateTmp=true, so a service
+# started from a /tmp path cannot see its own binary and fails 203/EXEC -
+# a harness artefact that looks exactly like a broken package. ProtectHome
+# is read-only rather than inaccessible, so a path under HOME stays
+# readable and executable inside the sandbox.
+ROOT=$(mktemp -d "${XDG_CACHE_HOME:-$HOME/.cache}/nexus-deb-test-XXXXXX")
 trap 'rm -rf "$ROOT" "${CACHE:-}"' EXIT
 FAILS=0
 ok()   { echo "  OK    $*"; }
@@ -130,6 +135,65 @@ else
     echo "  SKIP  editor self-test - no display"
 fi
 
+
+# ---- the packaged systemd unit must actually start ------------------------------------
+#
+# ⛔ This check exists because v0.0.3 shipped a unit that could NEVER start the daemon.
+# ProtectHome= covers /run/user as well as /home, so the single-instance lock file's
+# directory was read-only, and the failure surfaced as "the panel is already being driven
+# by another instance" - naming a process that did not exist. Every other check passed.
+#
+# A hardening score says nothing about whether the service runs. Only starting it does.
+echo "== systemd unit"
+UNIT="$ROOT/usr/lib/systemd/user/nexus-manager.service"
+if [ ! -f "$UNIT" ]; then
+    UNIT="$ROOT/usr/share/nexus-manager/nexus-manager.service"
+fi
+if [ ! -f "$UNIT" ]; then
+    echo "  SKIP  no systemd unit in this package"
+elif ! command -v systemd-run >/dev/null 2>&1 || [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+    echo "  SKIP  no user systemd session"
+else
+    # Restart=no: a restarting unit grabs the lock between probes and makes every
+    # later check meaningless. Learned the hard way.
+    TESTUNIT="nexus-pkgtest-$$"
+    mkdir -p "$HOME/.config/systemd/user"
+    sed -e "s#^ExecStart=.*#ExecStart=$LIB/nexus-manager daemon#" \
+        -e 's#^Restart=always#Restart=no#' \
+        "$UNIT" > "$HOME/.config/systemd/user/$TESTUNIT.service"
+    systemctl --user daemon-reload
+
+    # Nothing else may hold the panel, or a pass/fail here means nothing.
+    if pgrep -f "nexus-manager daemon\$" >/dev/null 2>&1; then
+        echo "  SKIP  another daemon holds the panel"
+    else
+        systemctl --user start "$TESTUNIT.service" >/dev/null 2>&1
+        started=0
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            sleep 1
+            if journalctl --user -u "$TESTUNIT.service" --since "-30s" --no-pager 2>/dev/null |
+               grep -q "screen(s) at"; then started=1; break; fi
+            [ "$(systemctl --user is-active "$TESTUNIT.service")" = failed ] && break
+        done
+        if [ "$started" = 1 ]; then
+            ok "packaged unit starts and reaches its ready state"
+        else
+            fail "packaged unit did not reach ready state"
+            journalctl --user -u "$TESTUNIT.service" --since "-30s" --no-pager 2>/dev/null |
+                tail -4 | sed 's/^/        /'
+        fi
+        systemctl --user stop "$TESTUNIT.service" >/dev/null 2>&1
+    fi
+    rm -f "$HOME/.config/systemd/user/$TESTUNIT.service"
+    systemctl --user daemon-reload
+    systemctl --user reset-failed >/dev/null 2>&1
+
+    if command -v systemd-analyze >/dev/null 2>&1; then
+        score=$(systemd-analyze security --user --offline=true "$UNIT" 2>/dev/null |
+                tail -1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        [ -n "$score" ] && echo "  INFO  systemd-analyze security: $score"
+    fi
+fi
 echo
 if [ "$FAILS" -eq 0 ]; then echo "  PACKAGE OK"; exit 0; fi
 echo "  PACKAGE FAILED ($FAILS)"; exit 1

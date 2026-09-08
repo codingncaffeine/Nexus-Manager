@@ -69,6 +69,7 @@ ROOT="$OUT/root"
 rm -rf "$ROOT"
 mkdir -p "$ROOT/usr/lib/nexus-manager" "$ROOT/usr/bin" \
          "$ROOT/usr/share/doc/nexus-manager" "$ROOT/usr/share/applications" \
+         "$ROOT/usr/lib/systemd/user" \
          "$ROOT/usr/lib/udev/rules.d"
 
 # ⛔ WHOLESALE. Never an allow-list of names: the moment the payload gains a file class
@@ -82,6 +83,9 @@ cp LICENSE "$ROOT/usr/share/doc/nexus-manager/copyright"
 cp packaging/nexus-manager.desktop packaging/nexus-manager-tray.desktop \
    "$ROOT/usr/share/applications/"
 cp packaging/70-icue-nexus.rules "$ROOT/usr/lib/udev/rules.d/"
+# The headless user service. The AUR package has always installed this; the .deb
+# did not, so a Debian user had no way to run the daemon without a tray.
+cp packaging/nexus-manager.service "$ROOT/usr/lib/systemd/user/"
 
 # Icons, wholesale again, preserving the hicolor tree exactly as it is laid out.
 find packaging/icons -type f -name '*.png' -print0 | while IFS= read -r -d '' f; do
