@@ -25,6 +25,18 @@ Not affiliated with or endorsed by Corsair.
   goniometer, and effect modes from fire and plasma to metaballs and a
   feedback tunnel, all with named colour palettes
 
+## Screenshots
+
+The Music Visualizer tab. 32 modes, named palettes, and a live preview of
+the strip as the panel is drawing it.
+
+![The music visualizer tab](docs/screenshots/music-visualizer.png)
+
+The Dashboard, showing every sensor the machine reports rather than a fixed
+list. On this desktop that is 78 across seven devices.
+
+![The dashboard](docs/screenshots/dashboard.png)
+
 ## Requirements
 
 - .NET 10
@@ -70,6 +82,8 @@ systemctl --user enable --now nexus-manager
 
 ## Documentation
 
+- [`SECURITY.md`](SECURITY.md) — what the application can do, what it
+  deliberately does not need, and where the trust boundaries are
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — the USB HID protocol, measured
   against real hardware: reports, pixel format, bit depth, touch, throughput
 - [`docs/SENSORS.md`](docs/SENSORS.md) — how sensors are discovered and named
