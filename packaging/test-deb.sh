@@ -164,8 +164,12 @@ else
     systemctl --user daemon-reload
 
     # Nothing else may hold the panel, or a pass/fail here means nothing.
-    if pgrep -f "nexus-manager daemon\$" >/dev/null 2>&1; then
-        echo "  SKIP  another daemon holds the panel"
+    # ⛔ ANY instance holds the panel lock, not just a daemon - the tray editor
+    # owns it too, and on a machine where the package is installed and
+    # autostarts that is the normal state. Checking only for a daemon made
+    # this report a FAILURE for a package that was working perfectly.
+    if pgrep -f "nexus-manager(-editor)?( |$)" >/dev/null 2>&1; then
+        echo "  SKIP  another instance holds the panel: $(pgrep -a -f 'nexus-manager(-editor)?( |$)' | head -1 | cut -c1-70)"
     else
         systemctl --user start "$TESTUNIT.service" >/dev/null 2>&1
         started=0

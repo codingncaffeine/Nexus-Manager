@@ -59,7 +59,17 @@ cp packaging/70-icue-nexus.rules packaging/nexus-manager.service \
 cp -a packaging/icons "$PUB/packaging/"
 
 echo "== tarball"
-tar -C "$PUB" -czf "$OUT/nexus-manager-$VER-linux-$ARCH.tar.gz" .
+# ⛔ A reproducible PUBLISH does not give a reproducible TARBALL. tar records
+# mtimes, owners and directory order, and gzip stamps the time into its own
+# header - so two identical trees still produced two different checksums, and
+# nobody could verify that a published artifact came from the published source.
+# Pinned: sorted entries, epoch mtimes, numeric root ownership, gzip -n.
+# SOURCE_DATE_EPOCH is honoured if set, so a rebuild can match an old release.
+TAR_MTIME="@${SOURCE_DATE_EPOCH:-0}"
+tar -C "$PUB" --sort=name --mtime="$TAR_MTIME" \
+    --owner=0 --group=0 --numeric-owner \
+    --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime \
+    -cf - . | gzip -n > "$OUT/nexus-manager-$VER-linux-$ARCH.tar.gz"
 
 # ---- the tree the .deb and the AUR package both install --------------------------------
 #
@@ -170,6 +180,12 @@ chmod 755 "$DEB/DEBIAN/postinst"
 
 dpkg-deb --build --root-owner-group "$DEB" "$OUT/nexus-manager$SUFFIX.deb" > /dev/null
 rm -rf "$DEB" "$ROOT"
+
+# A checksum file alongside the artifacts. Not a signature - it proves the
+# download was not corrupted, not that the release is authentic - but paired
+# with a reproducible build it lets anyone rebuild the tarball from the tag
+# and confirm the bytes match what was published.
+( cd "$OUT" && sha256sum nexus-manager-*.tar.gz nexus-manager*.deb > SHA256SUMS )
 
 echo "== artifacts:"
 ls -sh1 "$OUT" | grep -v publish

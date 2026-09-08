@@ -13,5 +13,16 @@
          reads VersionPrefix out of this file, so the tag, the .deb metadata, the
          tarball name and the PKGBUILD cannot drift apart from the binaries. -->
     <VersionPrefix>0.0.4</VersionPrefix>
+
+    <!-- ⛔ Without this every assembly embeds the ABSOLUTE path it was built
+         from - the .pdb reference alone leaks the developer's username and
+         directory layout into a public binary, and it turns up in any stack
+         trace a user pastes into a bug report. PathMap rewrites the compiler's
+         idea of the source root, so paths ship as /nexus-manager/... instead.
+         It is also what makes the build deterministic: without it, the same
+         source built in two directories produces different binaries. -->
+    <PathMap>$(MSBuildThisFileDirectory)=/nexus-manager/</PathMap>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 </Project>
