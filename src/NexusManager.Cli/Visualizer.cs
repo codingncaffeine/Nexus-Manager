@@ -285,6 +285,7 @@ public static class Visualizer
 
         var latencies = new List<double>();
         long stale = 0, drawn = 0, lastSeq = -1;
+        var lastFrame = TimeSpan.Zero;
         var period = TimeSpan.FromSeconds(1.0 / Math.Clamp(fps, 1, 65));
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var stop = TimeSpan.FromSeconds(seconds);
@@ -318,7 +319,12 @@ public static class Visualizer
 
                 var frame = cap.Current;
                 canvas.Clear(theme.BackgroundColor);
-                vis.Draw(canvas.Canvas, spec, rect, frame, theme);
+                // Real elapsed time, not the nominal period: a late frame must
+                // advance an effect by what actually passed or the animation
+                // speed quietly tracks scheduler jitter.
+                float dt = (float)(sw.Elapsed - lastFrame).TotalSeconds;
+                lastFrame = sw.Elapsed;
+                vis.Draw(canvas.Canvas, spec, rect, frame, theme, Math.Clamp(dt, 0.001f, 0.2f));
                 canvas.CopyTo(frameBytes);
                 dev.PushFrame(frameBytes);
                 drawn++;
@@ -358,6 +364,109 @@ public static class Visualizer
             Console.WriteLine("     this PLUS that, and this report does not know that number.");
         }
         return 0;
+    }
+
+
+    // ------------------------------------------------------------------ E5 --
+
+    /// <summary>
+    /// Times EVERY implemented mode in one run and reports a table.
+    ///
+    /// ⛔ This exists because an aggregate figure cannot name the mode that is
+    /// slow. Fire once dragged a cycling run's worst-case latency from 44.8 ms
+    /// to 79.6 ms while the average stayed respectable, and only a per-mode
+    /// comparison identified it. A mode that misses its frame target is a
+    /// defect, not a preference, so the check has to be cheap enough to run
+    /// after every change.
+    /// </summary>
+    public static async Task<int> SweepAsync(int perMode, int fps, int bands, CancellationToken ct)
+    {
+        var o = new AnalyserOptions { BandCount = bands };
+        var spec = new VisualizerSpec { BandCount = bands };
+        var theme = new Theme();
+
+        using var cap = new AudioCapture(o);
+        cap.Start();
+        using var dev = NexusDevice.Open();
+        using var canvas = new NexusCanvas();
+        using var vis = new VisualizerRenderer();
+        var frameBytes = new byte[NexusDevice.FrameBytes];
+        var rect = new SkiaSharp.SKRect(0, 0, NexusCanvas.Width, NexusCanvas.Height);
+        dev.SetBrightness(100);
+
+        var period = TimeSpan.FromSeconds(1.0 / Math.Clamp(fps, 1, 65));
+        var results = new List<(VisualizerKind Kind, double Fps, double P50, double Max)>();
+
+        Console.WriteLine($"  sweeping {VisualizerRenderer.Implemented.Length} modes, "
+                        + $"{perMode}s each at {fps} fps, {bands} bands");
+        Console.WriteLine();
+
+        try
+        {
+            foreach (var kind in VisualizerRenderer.Implemented)
+            {
+                if (ct.IsCancellationRequested) break;
+                spec.Kind = kind;
+
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var stop = TimeSpan.FromSeconds(perMode);
+                var lat = new List<double>();
+                var lastFrame = TimeSpan.Zero;
+                long tick = 0, drawn = 0, lastSeq = -1;
+
+                while (!ct.IsCancellationRequested && sw.Elapsed < stop)
+                {
+                    var wait = TimeSpan.FromTicks(period.Ticks * tick) - sw.Elapsed;
+                    if (wait > TimeSpan.Zero)
+                    {
+                        try { await Task.Delay(wait, ct).ConfigureAwait(false); }
+                        catch (OperationCanceledException) { break; }
+                    }
+                    tick++;
+
+                    var frame = cap.Current;
+                    float dt = (float)(sw.Elapsed - lastFrame).TotalSeconds;
+                    lastFrame = sw.Elapsed;
+
+                    canvas.Clear(theme.BackgroundColor);
+                    vis.Draw(canvas.Canvas, spec, rect, frame, theme, Math.Clamp(dt, 0.001f, 0.2f));
+                    canvas.CopyTo(frameBytes);
+                    dev.PushFrame(frameBytes);
+                    drawn++;
+
+                    if (frame.Sequence != lastSeq && frame.Sequence > 0)
+                    {
+                        lastSeq = frame.Sequence;
+                        lat.Add((AudioClock.Elapsed - frame.Timestamp).TotalMilliseconds);
+                    }
+                }
+
+                lat.Sort();
+                double achieved = drawn / sw.Elapsed.TotalSeconds;
+                results.Add((kind, achieved,
+                             lat.Count > 0 ? Pct(lat, 0.50) : 0,
+                             lat.Count > 0 ? lat[^1] : 0));
+                Console.WriteLine($"  {kind,-22} {achieved,5:F1} fps   "
+                                + $"p50 {(lat.Count > 0 ? Pct(lat, 0.50) : 0),5:F1} ms   "
+                                + $"max {(lat.Count > 0 ? lat[^1] : 0),5:F1} ms"
+                                + (achieved < fps - 1.0 ? "   <-- MISSES TARGET" : ""));
+            }
+        }
+        finally
+        {
+            dev.HandBack(1, 100);
+        }
+
+        var slow = results.Where(r => r.Fps < fps - 1.0).ToList();
+        Console.WriteLine();
+        if (slow.Count == 0)
+        {
+            Console.WriteLine($"  all {results.Count} modes held {fps} fps.");
+            return 0;
+        }
+        Console.WriteLine($"  {slow.Count} mode(s) BELOW target:");
+        foreach (var s in slow) Console.WriteLine($"    {s.Kind} at {s.Fps:F1} fps");
+        return 1;
     }
 
     private static double Pct(List<double> sorted, double p) =>

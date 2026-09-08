@@ -560,6 +560,16 @@ switch (cmd)
             // that printed FAILED still exited 0 and no script could tell.
             return Visualizer.SelfTest();
         }
+        if (args.Contains("--sweep"))
+        {
+            using var csw = new CancellationTokenSource();
+            Console.CancelKeyPress += (_, e) => { e.Cancel = true; csw.Cancel(); };
+            return await Visualizer.SweepAsync(
+                Visualizer.ParseInt(args, "--seconds", 5),
+                Visualizer.ParseInt(args, "--fps", 30),
+                Visualizer.ParseInt(args, "--bands", 32),
+                csw.Token);
+        }
         if (args.Contains("--probe"))
         {
             return await Visualizer.ProbeAsync(Visualizer.ParseInt(args, "--seconds", 6));

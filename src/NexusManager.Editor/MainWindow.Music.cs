@@ -30,6 +30,9 @@ public sealed partial class MainWindow
     private static readonly TimeSpan MusicInterval = TimeSpan.FromMilliseconds(1000.0 / 30);
     private static readonly TimeSpan EditorInterval = TimeSpan.FromMilliseconds(250);
 
+    /// <summary>Seconds per visualizer frame, matching MusicInterval.</summary>
+    private static readonly float MusicDt = (float)MusicInterval.TotalSeconds;
+
     private static string ModeName(VisualizerKind k) => k switch
     {
         VisualizerKind.Bars => "Spectrum bars",
@@ -41,6 +44,29 @@ public sealed partial class MainWindow
         VisualizerKind.WinampScope => "Winamp scope",
         VisualizerKind.Feedback => "Feedback tunnel",
         VisualizerKind.Fire => "Fire",
+        VisualizerKind.GradientBars => "Gradient bars",
+        VisualizerKind.SpectrumCurve => "Spectrum curve",
+        VisualizerKind.DualChannelSpectrum => "Dual channel",
+        VisualizerKind.DotMatrix => "Dot matrix",
+        VisualizerKind.Oscilloscope => "Oscilloscope",
+        VisualizerKind.FilledScope => "Filled scope",
+        VisualizerKind.EnvelopeMirror => "Envelope mirror",
+        VisualizerKind.LevelBar => "Level bar",
+        VisualizerKind.ReactiveBackground => "Reactive background",
+        VisualizerKind.BeatPulse => "Beat pulse",
+        VisualizerKind.Superscope => "Superscope",
+        VisualizerKind.Starfield => "Starfield",
+        VisualizerKind.Plasma => "Plasma",
+        VisualizerKind.WmpBars => "WMP analyser",
+        VisualizerKind.DotScope => "Dot scope",
+        VisualizerKind.Particles => "Particles",
+        VisualizerKind.Ambience => "Ambience",
+        VisualizerKind.Kaleidoscope => "Kaleidoscope",
+        VisualizerKind.Vectorscope => "Vectorscope",
+        VisualizerKind.ReflectedBars => "Reflected bars",
+        VisualizerKind.GlowPills => "Glow pills",
+        VisualizerKind.Blobs => "Blobs",
+        VisualizerKind.Terrain => "Terrain",
         _ => k.ToString(),
     };
 
@@ -131,7 +157,11 @@ public sealed partial class MainWindow
 
         var palette = new ComboBox
         {
-            ItemsSource = new[] { "Frequency ramp", "Single colour", "Theme colour" },
+            ItemsSource = new[]
+            {
+                "Frequency ramp", "Single colour", "Theme colour",
+                "Ocean Mist", "Fire Storm", "Meter", "Emerald",
+            },
             SelectedIndex = (int)m.Palette,
             FontSize = 12,
         };
@@ -215,7 +245,7 @@ public sealed partial class MainWindow
         _canvas.Clear(Screen.Theme.BackgroundColor);
         _visRenderer.Draw(_canvas.Canvas, _visSpec,
             new SkiaSharp.SKRect(0, 0, NexusCanvas.Width, NexusCanvas.Height),
-            frame, Screen.Theme);
+            frame, Screen.Theme, MusicDt);
         _musicPreview.Update(_canvas);
 
         // Status is refreshed a few times a second, not thirty: it is text, and

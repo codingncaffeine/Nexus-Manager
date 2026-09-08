@@ -32,6 +32,7 @@ public sealed class WinampRenderer : IDisposable
     private SKBitmap? _fb, _fbBack;
     private SKCanvas? _fbCanvas, _fbBackCanvas;
     private float _fbAngle;
+    private float _fbHue;
 
     // Fire.
     private byte[]? _fire;
@@ -57,7 +58,7 @@ public sealed class WinampRenderer : IDisposable
     /// throughout. Colouring each bar by its own height instead - the obvious
     /// implementation - looks nothing like it.
     /// </summary>
-    public void Spectrum(SKCanvas canvas, VisualizerSpec spec, SKRect rect, AudioFrame frame, Theme theme)
+    public void Spectrum(SKCanvas canvas, VisualizerSpec spec, SKRect rect, AudioFrame frame)
     {
         int n = Math.Min(spec.EffectiveBands, frame.Bands.Length);
         if (n <= 0 || rect.Width < n) return;
@@ -108,7 +109,7 @@ public sealed class WinampRenderer : IDisposable
     /// unconnected dots is the usual mistake and produces a dotted cloud at any
     /// signal level above a whisper.
     /// </summary>
-    public void Scope(SKCanvas canvas, SKRect rect, AudioFrame frame, Theme theme)
+    public void Scope(SKCanvas canvas, SKRect rect, AudioFrame frame)
     {
         int w = (int)rect.Width;
         if (w < 2 || frame.Waveform.Length < 2) return;
@@ -147,7 +148,7 @@ public sealed class WinampRenderer : IDisposable
     /// vortex it makes on a desktop, which suits the panel better than it has
     /// any right to.
     /// </summary>
-    public void Feedback(SKCanvas canvas, SKRect rect, AudioFrame frame, Theme theme)
+    public void Feedback(SKCanvas canvas, SKRect rect, AudioFrame frame)
     {
         int w = Math.Max(1, (int)rect.Width), h = Math.Max(1, (int)rect.Height);
         if (_fb is null || _fb.Width != w || _fb.Height != h)
@@ -176,7 +177,14 @@ public sealed class WinampRenderer : IDisposable
         // Decay by drawing the previous frame back dimmed. A translucent BLACK
         // wash instead would only ever approach black: on an 18-bit panel it
         // stalls on the low bits and leaves permanent ghosts.
-        dstCanvas.Clear(SKColors.Black);
+        // ⛔ NOT a clear to black. Checked against a MilkDrop capture: its
+        // signature is SATURATED COMPLEMENTARY colour - hot pink against
+        // cyan - not ink on a dark field. Decaying towards black gives a
+        // muddy grey smear with none of that character, and on an 18-bit
+        // panel the last steps of the fade stall on the low bits anyway.
+        _fbHue += 0.35f + frame.BeatIntensity * 8f;
+        var ground = VisualizerPalettes.Hue(_fbHue, 58f);
+        dstCanvas.Clear(ground);
         dstCanvas.Save();
         dstCanvas.Translate(w / 2f, h / 2f);
         dstCanvas.Scale(zoom, zoom);
@@ -198,7 +206,10 @@ public sealed class WinampRenderer : IDisposable
                 float s = frame.Waveform[(int)((long)x * (n - 1) / (count - 1))];
                 _trace[x] = new SKPoint(x, mid - Math.Clamp(s, -1f, 1f) * half);
             }
-            _fill.Color = Heat(bass, theme);
+            // The trace is the ground's complement, so it stays legible
+            // through every generation of the feedback rather than blending
+            // into whatever colour the field has drifted to.
+            _fill.Color = VisualizerPalettes.Hue(_fbHue + 180f, 62f);
             _fill.Style = SKPaintStyle.Stroke;
             _fill.StrokeWidth = 1f;
             dstCanvas.DrawPoints(SKPointMode.Polygon, _trace, _fill);
@@ -247,7 +258,7 @@ public sealed class WinampRenderer : IDisposable
     ///    against a 30 fps target while every other mode made 30.0 exactly. The
     ///    grid is now composed into a byte buffer and pushed in ONE copy.
     /// </summary>
-    public void Fire(SKCanvas canvas, SKRect rect, AudioFrame frame, Theme theme)
+    public void Fire(SKCanvas canvas, SKRect rect, AudioFrame frame)
     {
         int w = Math.Max(1, (int)rect.Width), h = Math.Max(1, (int)rect.Height);
         if (_fire is null || _fireW != w || _fireH != h)
@@ -321,12 +332,6 @@ public sealed class WinampRenderer : IDisposable
         }
         _firePaletteBuilt = true;
     }
-    private static SKColor Heat(float v, Theme theme)
-    {
-        v = Math.Clamp(v, 0f, 1f);
-        return Lerp(theme.ValueColor, theme.HotColor, v);
-    }
-
     private static SKColor Lerp(SKColor a, SKColor b, float t)
     {
         t = Math.Clamp(t, 0f, 1f);

@@ -81,6 +81,10 @@ public sealed class SpectrumAnalyser
     private readonly float[] _peakNorm;
     private readonly float[] _peakVel;
 
+    /// <summary>Beat detection runs on the NORMALISED bands, so it sees the
+    /// same numbers the display does rather than raw magnitudes.</summary>
+    private readonly OnsetDetector _onset;
+
     private long _sequence;
 
     public int BandCount => _o.BandCount;
@@ -130,6 +134,7 @@ public sealed class SpectrumAnalyser
             _bandDb[b] = _o.FloorDb;
         }
 
+        _onset = new OnsetDetector(n);
         _lastDb = _o.FloorDb;
     }
 
@@ -229,15 +234,38 @@ public sealed class SpectrumAnalyser
                 }
             }
         }
+
+        DetectOnset(dt);
     }
 
-    /// <summary>Publishes the current state. Allocates the small arrays fresh so
-    /// the frame handed to the renderer can never be mutated underneath it.</summary>
+    /// <summary>Feeds the onset detector. Separate from the band loop so the
+    /// detector always sees a COMPLETE set of bands - running it inside the
+    /// loop would hand it a half-updated spectrum.</summary>
+    private void DetectOnset(float dt)
+    {
+        Span<float> norm = stackalloc float[_o.BandCount];
+        for (int b = 0; b < _o.BandCount; b++) norm[b] = Normalise(_bandDb[b]);
+        _onset.Process(norm, dt);
+    }
+
+    public bool Beat => _onset.Beat;
+    public float BeatIntensity => _onset.Intensity;
+
+    /// <summary>
+    /// Publishes the current state. Allocates the small arrays fresh so the
+    /// frame handed to the renderer can never be mutated underneath it.
+    ///
+    /// The stereo waveforms are optional and fall back to the mono mix, so a
+    /// caller that only has mono - the self-test, for one - is not forced to
+    /// invent two channels it does not have.
+    /// </summary>
     public AudioFrame Publish(
         ReadOnlySpan<float> waveform,
         float rmsL, float rmsR, float peakL, float peakR,
         float monoPeakDbfs,
-        TimeSpan timestamp)
+        TimeSpan timestamp,
+        ReadOnlySpan<float> waveLeft = default,
+        ReadOnlySpan<float> waveRight = default)
     {
         var bands = new float[_o.BandCount];
         var peaks = new float[_o.BandCount];
@@ -250,6 +278,14 @@ public sealed class SpectrumAnalyser
         var wave = new float[waveform.Length];
         waveform.CopyTo(wave);
 
+        static float[] Copy(ReadOnlySpan<float> src, float[] fallback)
+        {
+            if (src.Length == 0) return fallback;
+            var a = new float[src.Length];
+            src.CopyTo(a);
+            return a;
+        }
+
         _lastDb = monoPeakDbfs;
 
         return new AudioFrame
@@ -258,12 +294,16 @@ public sealed class SpectrumAnalyser
             Peaks = peaks,
             BandCentres = (float[])_centres.Clone(),
             Waveform = wave,
+            WaveformLeft = Copy(waveLeft, wave),
+            WaveformRight = Copy(waveRight, wave),
             RmsLeft = Normalise(ToDb(rmsL)),
             RmsRight = Normalise(ToDb(rmsR)),
             PeakLeft = Normalise(ToDb(peakL)),
             PeakRight = Normalise(ToDb(peakR)),
             Silent = monoPeakDbfs < _o.SilenceGateDbfs,
             PeakDbfs = monoPeakDbfs,
+            Beat = _onset.Beat,
+            BeatIntensity = _onset.Intensity,
             Sequence = ++_sequence,
             Timestamp = timestamp,
         };

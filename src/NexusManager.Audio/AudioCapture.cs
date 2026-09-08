@@ -44,9 +44,16 @@ public sealed class AudioCapture : IDisposable
     /// <summary>Analysis history. Ring, not a sliding window - see RingBuffer.</summary>
     private readonly RingBuffer _ring;
     private readonly RingBuffer _waveRing;
+    /// <summary>Per-channel history, for the goniometer. Kept separately
+    /// because a vectorscope cannot be derived from the mono mix - the mix
+    /// is exactly the information it exists to show.</summary>
+    private readonly RingBuffer _waveRingL;
+    private readonly RingBuffer _waveRingR;
     /// <summary>Copy-out scratch, reused so a hop allocates nothing.</summary>
     private readonly float[] _window;
     private readonly float[] _waveform;
+    private readonly float[] _waveformL;
+    private readonly float[] _waveformR;
 
     private volatile AudioFrame _current;
     private volatile string _sink = "(unresolved)";
@@ -71,8 +78,12 @@ public sealed class AudioCapture : IDisposable
         _analyser = new SpectrumAnalyser(options);
         _ring = new RingBuffer(_o.FftSize);
         _waveRing = new RingBuffer(_o.WaveformLength);
+        _waveRingL = new RingBuffer(_o.WaveformLength);
+        _waveRingR = new RingBuffer(_o.WaveformLength);
         _window = new float[_o.FftSize];
         _waveform = new float[_o.WaveformLength];
+        _waveformL = new float[_o.WaveformLength];
+        _waveformR = new float[_o.WaveformLength];
         _current = AudioFrame.Empty(_o.BandCount, _o.WaveformLength);
     }
 
@@ -226,6 +237,8 @@ public sealed class AudioCapture : IDisposable
 
                 _ring.Add(mono);
                 _waveRing.Add(mono);
+                _waveRingL.Add(l);
+                _waveRingR.Add(r);
 
                 float al = MathF.Abs(l), ar = MathF.Abs(r), am = MathF.Abs(mono);
                 rmsAccL += l * l; rmsAccR += r * r;
@@ -252,6 +265,8 @@ public sealed class AudioCapture : IDisposable
 
                 _ring.CopyOrdered(_window);
                 _waveRing.CopyOrdered(_waveform);
+                _waveRingL.CopyOrdered(_waveformL);
+                _waveRingR.CopyOrdered(_waveformR);
 
                 float dt = (float)_o.HopSize / _o.SampleRate;
                 _analyser.Process(_window, dt);
@@ -265,7 +280,8 @@ public sealed class AudioCapture : IDisposable
                     // was read, not when the hop finished. That is what makes
                     // "now minus this" a real latency rather than a render-time
                     // measurement of our own arithmetic.
-                    stamp);
+                    stamp,
+                    _waveformL, _waveformR);
 
                 Interlocked.Increment(ref _hops);
                 rmsAccL = rmsAccR = peakL = peakR = monoPeak = 0f;
