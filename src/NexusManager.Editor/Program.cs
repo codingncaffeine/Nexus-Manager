@@ -1,4 +1,5 @@
 using Avalonia;
+using NexusManager.Device;
 
 namespace NexusManager.Editor;
 
@@ -18,6 +19,40 @@ internal static class Program
         try
         {
             Console.Error.WriteLine("[boot] building Avalonia app");
+            App.StartHidden = args.Contains("--tray") || args.Contains("--minimized");
+            int viewAt = Array.IndexOf(args, "--view");
+            if (viewAt >= 0 && viewAt + 1 < args.Length) App.StartView = args[viewAt + 1];
+            App.SelfTest = args.Contains("--selftest");
+            App.NoDevice = args.Contains("--no-device");
+            App.ProbeDrag = args.Contains("--probe-drag");
+            if (App.ProbeDrag) { App.NoDevice = true; App.StartHidden = true; }
+            if (App.SelfTest) App.StartHidden = true;
+            // ⛔ SINGLE INSTANCE, NO EXEMPTIONS. Decided before Avalonia starts.
+            //
+            // Two copies do not merely duplicate a tray icon: they both drive the
+            // panel (hidraw interleaves the writes, so nothing errors and the
+            // strip just flickers) and, since edits autosave, they both write
+            // screens.json and can lose each other's work.
+            //
+            // --selftest, --probe-drag and --no-device USED to be exempt so they
+            // could run beside a live instance. That convenience was mine, and it
+            // is exactly how a second app appeared in the user's tray. A
+            // diagnostic that needs the app stopped can stop it.
+            App.Instance = SingleInstance.TryAcquire("editor");
+            if (App.Instance is null)
+            {
+                string holder = SingleInstance.DescribeHolder();
+                // Launching again is how people ask for the window back, so treat
+                // it as exactly that rather than as an error.
+                if (!App.SelfTest && !App.ProbeDrag && SingleInstance.Signal("show"))
+                    Console.Error.WriteLine(
+                        "Nexus Manager is already running - bringing its window to the front.");
+                else
+                    Console.Error.WriteLine(
+                        $"Nexus Manager is already running as {holder}. Stop it first.");
+                return;
+            }
+
             BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
             Console.Error.WriteLine("[boot] lifetime exited normally");
         }

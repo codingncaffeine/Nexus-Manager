@@ -4,6 +4,7 @@
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.151.2" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../NexusManager.Actions/NexusManager.Actions.csproj" />
     <ProjectReference Include="../NexusManager.Device/NexusManager.Device.csproj" />
     <ProjectReference Include="..\NexusManager.Sensors\NexusManager.Sensors.csproj" />
   </ItemGroup>

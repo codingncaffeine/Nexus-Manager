@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using NexusManager.Actions;
 using NexusManager.Cli;
 using NexusManager.Device;
 using NexusManager.Render;
@@ -130,10 +131,146 @@ switch (cmd)
         break;
     }
 
+    case "key":
+    {
+        // Fires a synthetic keypress through the uinput virtual keyboard, so
+        // the macro-button path can be proven WITHOUT a panel or a GUI. This
+        // is the piece most likely to fail silently: a device that is created
+        // but never delivers an event looks identical to one that works.
+        if (args.Length < 2)
+        {
+            Console.Error.WriteLine("usage: nexus-manager key <combo>   e.g. ctrl+alt+t");
+            Console.Error.WriteLine("known keys: " + string.Join(" ",
+                UinputKeyboard.KeyCodes.Keys.OrderBy(k => k)));
+            return 2;
+        }
+        using var kb = new UinputKeyboard();
+        string? kerr = kb.Press(args[1]);
+        if (kerr is not null) { Console.Error.WriteLine(kerr); return 1; }
+        Console.WriteLine($"pressed {args[1]}");
+
+        // --repeat keeps the device alive and fires again, so a test can attach
+        // a reader AFTER the device appears and still catch a press. Without it
+        // the only press happens before anything can be listening, and "no event
+        // captured" is indistinguishable from a keyboard that does not work.
+        int repeat = 1;
+        int rAt = Array.IndexOf(args, "--repeat");
+        if (rAt >= 0 && rAt + 1 < args.Length) int.TryParse(args[rAt + 1], out repeat);
+        for (int i = 1; i < Math.Clamp(repeat, 1, 100); i++)
+        {
+            await Task.Delay(300);
+            kb.Press(args[1]);
+            Console.WriteLine($"pressed {args[1]} ({i + 1})");
+        }
+        // Held open briefly: destroying the device immediately can race the
+        // events out of the queue before anything reads them.
+        await Task.Delay(300);
+        break;
+    }
+
+    case "preview":
+    {
+        // Renders a configured screen to a PNG WITHOUT touching the device, so a
+        // config can be checked while something else owns the panel - and so
+        // button layout and drawing can be verified at all, which otherwise
+        // needs hardware plus a finger.
+        using var reg = SensorRegistry.CreateDefault();
+        reg.Scale = fahrenheit ? TemperatureScale.Fahrenheit : TemperatureScale.Celsius;
+        var pset = await Config.LoadAsync(null) ?? Config.Discover(reg, fahrenheit);
+        if (pset.IsEmpty) { Console.Error.WriteLine("No screens configured."); return 1; }
+
+        int which = 0;
+        int sAt = Array.IndexOf(args, "--screen");
+        if (sAt >= 0 && sAt + 1 < args.Length) int.TryParse(args[sAt + 1], out which);
+        which = Math.Clamp(which, 0, pset.Screens.Count - 1);
+        var pscreen = pset.Screens[which];
+
+        string outPath = "screen.png";
+        int oAt = Array.IndexOf(args, "--out");
+        if (oAt >= 0 && oAt + 1 < args.Length) outPath = args[oAt + 1];
+
+        reg.SetActive(pscreen.Modules.Select(m => m.Source));
+        reg.Sample();
+        await Task.Delay(250);
+        reg.Sample();
+
+        var (pmods, pbtns) = ScreenLayout.ComputeAll(pscreen, out var pnarrow);
+        foreach (string wmsg in pnarrow) Console.Error.WriteLine($"  warning: {wmsg}");
+
+        using var pcanvas = new NexusCanvas();
+        using var prend = new ScreenRenderer(pscreen.Theme);
+        var phist = pmods.Select(l => new History(Math.Max(2, (int)l.Rect.Width))).ToList();
+        // A few samples so charts are not empty, which would make a screen look
+        // broken rather than new.
+        for (int s = 0; s < 8; s++)
+        {
+            reg.Sample();
+            for (int i = 0; i < pmods.Count; i++)
+            {
+                double v = reg.Read(pmods[i].Spec.Source);
+                if (!double.IsNaN(v)) phist[i].Add(v);
+            }
+        }
+
+        int pressed = -1;
+        int prAt = Array.IndexOf(args, "--press");
+        if (prAt >= 0 && prAt + 1 < args.Length) int.TryParse(args[prAt + 1], out pressed);
+
+        prend.Draw(pcanvas, pmods, phist,
+            k => { double v = reg.Read(k); return double.IsNaN(v) ? 0 : v; },
+            pscreen.Background, TimeSpan.Zero, pbtns, pressed, TimeSpan.FromDays(1));
+        if (pset.ShowPageIndicator)
+            PageIndicator.Draw(pcanvas.Canvas, which, pset.Screens.Count, pscreen.Theme.CaptionColor);
+
+        var pframe = new byte[NexusDevice.FrameBytes];
+        pcanvas.CopyTo(pframe);
+        using (var pbmp = new SKBitmap(new SKImageInfo(
+                   NexusCanvas.Width, NexusCanvas.Height, SKColorType.Bgra8888, SKAlphaType.Opaque)))
+        {
+            System.Runtime.InteropServices.Marshal.Copy(pframe, 0, pbmp.GetPixels(), pframe.Length);
+            using var pdata = pbmp.Encode(SKEncodedImageFormat.Png, 100);
+            using var pfs = File.Create(outPath);
+            pdata.SaveTo(pfs);
+        }
+        Console.WriteLine($"screen {which} '{pscreen.Name}': " +
+                          $"{pmods.Count} module(s), {pbtns.Count} button(s) -> {outPath}");
+        foreach (var b in pbtns)
+            Console.WriteLine($"  button [{b.Rect.Left:0}-{b.Rect.Right:0}] " +
+                              $"'{b.Spec.Label}' {b.Spec.Action}");
+        break;
+    }
+
+    case "blank":
+    {
+        // A way to clear the panel WITHOUT starting a render loop. Without this
+        // the only way to blank the strip was to start a daemon and stop it
+        // again, so a killed process left its last frame on the glass with no
+        // way to clear it - which is exactly the stale-readings display the
+        // blank-on-exit rule exists to prevent.
+        using var d = NexusDevice.Open();
+        d.Blank();
+        d.SetBrightness(0);
+        Console.WriteLine("panel blanked");
+        break;
+    }
+
     case "run":
     case "daemon":
     {
         string? path = args.Length > 1 && !args[1].StartsWith('-') ? args[1] : null;
+        // One writer only. Two processes pushing frames to the same panel do
+        // NOT error - the HID output reports simply interleave - so the sole
+        // symptom is the strip flickering between two screens, which is what
+        // the user hit by launching the app a second time.
+        using var instance = SingleInstance.TryAcquire("daemon");
+        if (instance is null)
+        {
+            Console.Error.WriteLine(
+                $"The panel is already being driven by {SingleInstance.DescribeHolder()}.");
+            Console.Error.WriteLine("Stop that first, or use its window instead.");
+            return 1;
+        }
+
         using var dev = NexusDevice.Open();
         using var reg = SensorRegistry.CreateDefault();
         reg.Scale = fahrenheit ? TemperatureScale.Fahrenheit : TemperatureScale.Celsius;
@@ -156,7 +293,7 @@ switch (cmd)
         HidSharp.HidStream? touchStream = null;
         try
         {
-            touchStream = OpenTouchStream();
+            touchStream = NexusDevice.OpenTouchStream();
             var touch = new NexusTouch(touchStream);
             touch.Gesture += daemon.OnGesture;
             _ = touch.RunAsync(cts.Token);
@@ -209,7 +346,7 @@ switch (cmd)
     case "touch":
     {
         using var dev = NexusDevice.Open();
-        using var stream = OpenTouchStream();
+        using var stream = NexusDevice.OpenTouchStream();
         var touch = new NexusTouch(stream);
         touch.Gesture += g => Console.WriteLine(
             $"  {g.Kind,-11} start={g.StartX,-4} end={g.EndX,-4} travel={g.Travel,5} " +
@@ -218,6 +355,89 @@ switch (cmd)
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
         Console.WriteLine("Gesture stream (Ctrl-C to stop). Fast swipes are stitched per D13.");
         await touch.RunAsync(cts.Token);
+        break;
+    }
+
+    case "image":
+    {
+        // Instrument for backgrounds. Reports what a file ACTUALLY decoded to -
+        // frame count, per-frame delays, presentation size, memory - and can dump
+        // composited frames so the result can be looked at rather than trusted.
+        if (args.Length < 2)
+        {
+            Console.Error.WriteLine("usage: nexus-manager image <file> [--fit cover|stretch|contain|center|tile|scrollleft|scrollright] [--dump <dir>] [--frames N]");
+            return 2;
+        }
+        string path = args[1];
+        var fit = BackgroundFit.Cover;
+        int fitAt = Array.IndexOf(args, "--fit");
+        if (fitAt >= 0 && fitAt + 1 < args.Length
+            && Enum.TryParse<BackgroundFit>(args[fitAt + 1], ignoreCase: true, out var parsed))
+            fit = parsed;
+
+        double zoom = 1, fx = 0.5, fy = 0.5;
+        int zAt = Array.IndexOf(args, "--zoom");
+        if (zAt >= 0 && zAt + 1 < args.Length) double.TryParse(args[zAt + 1], out zoom);
+        int fAt = Array.IndexOf(args, "--focus");
+        if (fAt >= 0 && fAt + 2 < args.Length)
+        { double.TryParse(args[fAt + 1], out fx); double.TryParse(args[fAt + 2], out fy); }
+
+        var img = AnimatedImage.Load(path, NexusCanvas.Width, NexusCanvas.Height, fit,
+                                     zoom, fx, fy, out string? err);
+        if (err is not null) Console.Error.WriteLine($"note: {err}");
+        if (img is null) return 1;
+
+        using (img)
+        {
+            Console.WriteLine($"file          {path}");
+            Console.WriteLine($"fit           {fit}");
+            Console.WriteLine($"frames        {img.FrameCount}{(img.IsAnimated ? " (animated)" : " (still)")}");
+            Console.WriteLine($"stored size   {img.Size.Width}x{img.Size.Height}");
+            Console.WriteLine($"duration      {img.Duration.TotalMilliseconds:F0} ms"
+                              + (img.Duration.TotalMilliseconds > 0
+                                 ? $"  ({img.FrameCount / img.Duration.TotalSeconds:F1} fps average)" : ""));
+            Console.WriteLine($"memory        {img.BytesUsed / 1024.0:F0} KB");
+
+            int dumpAt = Array.IndexOf(args, "--dump");
+            if (dumpAt >= 0 && dumpAt + 1 < args.Length)
+            {
+                string dir = args[dumpAt + 1];
+                Directory.CreateDirectory(dir);
+                // A SAMPLE count over the timeline, not a frame index: a still image
+                // with a scrolling fit is animated by time alone, so clamping this to
+                // the source frame count would sample such a screen exactly once.
+                int want = Math.Max(1, img.FrameCount);
+                int nAt = Array.IndexOf(args, "--frames");
+                if (nAt >= 0 && nAt + 1 < args.Length && int.TryParse(args[nAt + 1], out int n))
+                    want = Math.Max(1, n);
+
+                // Sampled across the animation's own timeline, through the same
+                // painter the panel uses - so what lands on disk is what the panel
+                // would show, scroll offsets and all, not a raw frame dump.
+                using var painter = new BackgroundPainter();
+                var spec = new BackgroundSpec { Image = path, Fit = fit, Zoom = zoom, FocusX = fx, FocusY = fy };
+                using var canvas = new NexusCanvas();
+                double totalMs = Math.Max(img.Duration.TotalMilliseconds, 1000);
+                for (int i = 0; i < want; i++)
+                {
+                    var t = TimeSpan.FromMilliseconds(totalMs * i / want);
+                    painter.Draw(canvas.Canvas, spec, SKColors.Black, t);
+                    var frame = new byte[NexusDevice.FrameBytes];
+                    canvas.CopyTo(frame);
+                    // Written through CopyTo so the dump carries the dithering and
+                    // channel order the panel actually receives.
+                    using var bmp = new SKBitmap(new SKImageInfo(
+                        NexusCanvas.Width, NexusCanvas.Height, SKColorType.Bgra8888, SKAlphaType.Opaque));
+                    System.Runtime.InteropServices.Marshal.Copy(
+                        frame, 0, bmp.GetPixels(), frame.Length);
+                    using var data = bmp.Encode(SKEncodedImageFormat.Png, 100);
+                    string outPath = Path.Combine(dir, $"frame-{i:D4}.png");
+                    using var fs = File.Create(outPath);
+                    data.SaveTo(fs);
+                }
+                Console.WriteLine($"dumped        {want} frame(s) to {dir}");
+            }
+        }
         break;
     }
 
@@ -231,6 +451,10 @@ switch (cmd)
               run [file] [-f]     render a screen config to the panel
               bench [seconds]     raw frame upload rate
               touch               live gesture stream
+              image <file>        inspect a background image or animation
+              blank               clear the panel and turn its backlight off
+              preview [--screen N] render a screen to a PNG, no device needed
+              key <combo>         send a synthetic keypress (ctrl+alt+t)
 
               -f / --fahrenheit   show temperatures in Fahrenheit
             """);
@@ -238,12 +462,4 @@ switch (cmd)
 }
 
 return 0;
-
-static HidSharp.HidStream OpenTouchStream()
-{
-    foreach (var d in HidSharp.DeviceList.Local.GetHidDevices(NexusDevice.VendorId, NexusDevice.ProductId))
-        if (d.GetMaxOutputReportLength() >= 1024 && d.TryOpen(out var s))
-            return s;
-    throw new InvalidOperationException("Could not open the NEXUS control interface for touch.");
-}
 

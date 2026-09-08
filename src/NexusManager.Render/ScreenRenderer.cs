@@ -30,6 +30,10 @@ public sealed class ScreenRenderer : IDisposable
     private readonly SKFont _minmax;
     private readonly SKPaint _text = new() { IsAntialias = true };
     private readonly SKPaint _flat = new() { IsAntialias = false };
+    /// <summary>Holds the decoded background between frames. Decoding a GIF
+    /// per frame costs far more than the whole 41 ms frame budget.</summary>
+    private readonly BackgroundPainter _background = new();
+    private readonly ButtonRenderer _buttons;
 
     public ScreenRenderer(Theme theme)
     {
@@ -37,6 +41,7 @@ public sealed class ScreenRenderer : IDisposable
         _face    = Face(theme.FontFamily, theme.CaptionBold);
         _faceVal = Face(theme.FontFamily, theme.ValueBold);
 
+        _buttons = new ButtonRenderer(theme);
         _label        = new SKFont(_face,    theme.CaptionSize);
         _device       = new SKFont(_face,    theme.CaptionSize - 2f);
         _value        = new SKFont(_faceVal, theme.ValueSize);
@@ -49,9 +54,17 @@ public sealed class ScreenRenderer : IDisposable
         NexusCanvas canvas,
         IReadOnlyList<ModuleLayout> layout,
         IReadOnlyList<History> histories,
-        Func<string, double> read)
+        Func<string, double> read,
+        BackgroundSpec? background = null,
+        TimeSpan elapsed = default,
+        IReadOnlyList<ButtonLayout>? buttons = null,
+        int pressedButton = -1,
+        TimeSpan flashUntil = default)
     {
-        canvas.Clear(_theme.BackgroundColor);
+        // Background first: colour, still image, or a running animation. The
+        // elapsed time is wall-clock, so a GIF plays at ITS rate rather than
+        // being tied to whatever the panel frame rate is set to.
+        _background.Draw(canvas.Canvas, background, _theme.BackgroundColor, elapsed);
 
         for (int i = 0; i < layout.Count; i++)
         {
@@ -131,12 +144,18 @@ public sealed class ScreenRenderer : IDisposable
                 }
             }
 
+            // Divider between cells, skipped before the first.
             if (i > 0)
             {
                 _flat.Color = _theme.DividerColor;
                 canvas.Canvas.DrawRect(rect.Left, 4, 1, NexusCanvas.Height - 8, _flat);
             }
         }
+
+        // Buttons last, so they sit above the readouts and their outline is
+        // never clipped by a neighbouring chart.
+        if (buttons is { Count: > 0 })
+            _buttons.Draw(canvas.Canvas, buttons, _theme, pressedButton, elapsed, flashUntil);
     }
 
     private static string Round(double v, ModuleSpec spec) =>
@@ -167,10 +186,21 @@ public sealed class ScreenRenderer : IDisposable
             SKFontStyleWidth.Normal, SKFontStyleSlant.Upright)
         ?? SKTypeface.Default;
 
+    /// <summary>Why the background failed to load, if it did. Surfaced so a bad
+    /// path reports itself instead of looking like a feature that does nothing.
+    /// </summary>
+    public string? BackgroundError => _background.LastError;
+
+    /// <summary>The decoded background, for the editor to report frame count and
+    /// memory against.</summary>
+    public AnimatedImage? BackgroundImage => _background.Image;
+
     public void Dispose()
     {
         _label.Dispose(); _device.Dispose(); _value.Dispose(); _valueCompact.Dispose();
         _unit.Dispose(); _minmax.Dispose();
         _text.Dispose(); _flat.Dispose(); _face.Dispose(); _faceVal.Dispose();
+        _buttons.Dispose();
+        _background.Dispose();
     }
 }

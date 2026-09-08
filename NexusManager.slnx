@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/NexusManager.Actions/NexusManager.Actions.csproj" />
     <Project Path="src/NexusManager.Cli/NexusManager.Cli.csproj" />
     <Project Path="src/NexusManager.Device/NexusManager.Device.csproj" />
     <Project Path="src/NexusManager.Editor/NexusManager.Editor.csproj" />

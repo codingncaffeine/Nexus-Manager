@@ -35,6 +35,21 @@ public sealed class NexusDevice : IDisposable
     /// the device also exposes a boot-keyboard interface, and writing frame data
     /// at that descriptor is the failure mode this guards against (D7).
     /// </summary>
+    /// <summary>
+    /// A SECOND stream on the same device, for touch.
+    ///
+    /// Gestures are read on their own stream so a 104 Hz input poll never waits
+    /// behind the 121 output writes each frame costs. Measured to coexist fine.
+    /// </summary>
+    public static HidStream OpenTouchStream()
+    {
+        foreach (var d in DeviceList.Local.GetHidDevices(VendorId, ProductId))
+            if (d.GetMaxOutputReportLength() >= 1024 && d.TryOpen(out var s))
+                return s;
+        throw new InvalidOperationException(
+            "Could not open the NEXUS control interface for touch.");
+    }
+
     public static NexusDevice Open()
     {
         var candidates = DeviceList.Local.GetHidDevices(VendorId, ProductId).ToList();

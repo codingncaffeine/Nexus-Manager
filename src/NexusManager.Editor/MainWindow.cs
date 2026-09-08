@@ -21,8 +21,41 @@ public sealed partial class MainWindow : Window
     private string _rendererSig = "";
 
     private readonly NexusCanvas _canvas = new();
-    private readonly PanelPreview _preview = new(scale: 2);
+    /// <summary>The preview IS the layout editor: cells are resized by dragging
+    /// on it directly, rather than on a second bar drawing the same thing.
+    private readonly PanelPreview _preview = new(scale: 2, interactive: true);
+    private readonly DashboardLayout _dashLayout = DashboardLayout.Load();
+    private readonly AppSettings _settings = AppSettings.Load();
+    /// <summary>Created once the registry exists, so it can resolve keys.</summary>
+    private SensorLogger? _logger;
+    private TrayIcon? _tray;
+    /// <summary>Set when the tray asks to quit for real, so Closing stops
+    /// hiding the window and lets the process go.</summary>
+    private bool _quitting;
+
+    /// <summary>Settings ask for a hidden start. Read here rather than in App so
+    /// the command line and the saved preference land in the same place.</summary>
+    public bool PrefersHidden => _settings.StartMinimised;
+
+    /// <summary>Celsius / Fahrenheit switch. iCUE exposes the same choice, and
+    /// the conversion is display-only — readings are stored in their native unit
+    /// so switching is never lossy.</summary>
+    private readonly ComboBox _unitToggle = new()
+    {
+        ItemsSource = new[] { "°C", "°F", "K" },
+        SelectedIndex = 0, Width = 68, FontSize = 11,
+        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+    };
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    /// <summary>Wall clock the background animation plays against, so the
+    /// preview runs a GIF at its own rate rather than at the UI tick rate.</summary>
+    private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
+    /// <summary>Throttles reconnection attempts while the panel is absent.</summary>
+    private readonly System.Diagnostics.Stopwatch _reopenClock = System.Diagnostics.Stopwatch.StartNew();
+    private volatile bool _reopening;
+    /// <summary>Consecutive failed frame pushes. One is noise; a run of them
+    /// means the panel is gone.</summary>
+    private int _pushFailures;
 
     private ScreenSet _set = new();
     private List<History> _histories = [];
@@ -63,19 +96,42 @@ public sealed partial class MainWindow : Window
         {
             Console.Error.WriteLine($"[boot] icon unavailable: {ex.Message}");
         }
-        Background = new SolidColorBrush(Color.FromRgb(32, 32, 38));
+        Background = Style.PageBrush;
         Width = 1020; Height = 740;
         MinWidth = 880; MinHeight = 600;
+        // Come back the size and place it was left. Read before the window is
+        // shown, so there is no visible jump from the default to the saved size.
+        RestoreGeometry();
 
         // Placeholder screen so the layout has something valid to bind against
         // before discovery finishes.
         _set.Screens.Add(new ScreenSpec { Name = "Loading…" });
 
-        Content = BuildLayout();
+        Content = BuildShell();
+        ShowView("dashboard");
         _status.Text = "discovering sensors…";
 
         Console.Error.WriteLine("[boot] MainWindow constructed");
-        Opened += async (_, _) => { Console.Error.WriteLine("[boot] Opened fired"); await InitAsync(); };
+        // Init is posted to the dispatcher rather than hung off Opened. A
+        // window that starts hidden in the tray never RAISES Opened, so an
+        // Opened-triggered startup silently does nothing in exactly the mode
+        // that has to keep the panel alive.
+        Dispatcher.UIThread.Post(async () =>
+        {
+            Console.Error.WriteLine("[boot] init posted");
+            await InitAsync();
+        }, DispatcherPriority.Background);
+        Closing += (_, e) =>
+        {
+            // Dismissing the window must not blank the panel: the whole point
+            // of the tray is that the display keeps running.
+            // Geometry is recorded on the way out whichever way that is: hiding
+            // to the tray never raises Closed, so saving only there loses it.
+            SaveGeometry();
+            if (_quitting || !_settings.CloseToTray) return;
+            e.Cancel = true;
+            Hide();
+        };
         Closed += (_, _) => Shutdown();
     }
 
@@ -122,6 +178,10 @@ public sealed partial class MainWindow : Window
 
         Stage($"discovered {reg.All.Count} sensors, {set.Screens.Count} screen(s)");
         _reg = reg;
+        _logger = new SensorLogger(reg);
+        reg.Scale = _settings.Scale;
+        _unitToggle.SelectedIndex = (int)_settings.Scale;
+        HomeDefaults.Seed(_dashLayout, reg);
         _set = set;
         _screenIndex = 0; _moduleIndex = 0;
         _ready = true;
@@ -131,16 +191,61 @@ public sealed partial class MainWindow : Window
         Stage("module list");         RefreshModuleList();
         Stage("theme panel");         RefreshThemePanel();
 
-        Stage("opening panel");         await Task.Run(TryOpenDevice);
+        // The self test never touches the device: it checks that views BUILD,
+        // and it has to stay safe to run while a real instance owns the panel.
+        if (App.SelfTest || App.NoDevice) Stage("panel skipped");
+        else { Stage("opening panel"); await Task.Run(TryOpenDevice); }
+
+        _unitToggle.SelectionChanged += (_, _) =>
+        {
+            if (_reg is null) return;
+            _reg.Scale = _unitToggle.SelectedIndex switch
+            {
+                1 => TemperatureScale.Fahrenheit,
+                2 => TemperatureScale.Kelvin,
+                _ => TemperatureScale.Celsius,
+            };
+            _dashboard?.Rebuild();
+        };
+
+        WireActions();
+        // Diagnostics must never appear in the user's tray. --selftest,
+        // --probe-drag and --no-device all ran BuildTray, so every diagnostic
+        // run put a second icon beside the real one until it exited.
+        if (App.SelfTest || App.ProbeDrag || App.NoDevice) Stage("tray skipped");
+        else { Stage("tray"); BuildTray(); }
+
+        // Launching the application again is how people ask for the window
+        // back - the second process signals us and exits rather than starting
+        // a rival render loop.
+        if (App.Instance is { } instance)
+        {
+            instance.MessageReceived += message =>
+            {
+                if (message != "show") return;
+                Dispatcher.UIThread.Post(ShowWindow);
+            };
+            instance.StartListening();
+        }
 
         _timer.Tick += (_, _) => Tick();
         _timer.Start();
+        ShowView(_view);
+        if (App.ProbeDrag) { Stage("probe"); RunDragProbe(); return; }
+        if (App.SelfTest) { Stage("selftest"); RunSelfTest(); return; }
         Stage("ready");
     }
 
     private void Shutdown()
     {
         _timer.Stop();
+        // Flush a pending autosave rather than dropping the last edit.
+        if (_autosave.IsEnabled)
+        {
+            _autosave.Stop();
+            try { Config.SaveAsync(_set, null).GetAwaiter().GetResult(); }
+            catch (Exception ex) { Console.Error.WriteLine($"[save] {ex.Message}"); }
+        }
         try
         {
             // Never leave stale readings on the panel.
@@ -148,20 +253,23 @@ public sealed partial class MainWindow : Window
             _device?.SetBrightness(0);
         }
         catch (Exception) { }
+        StopTouch();
         _device?.Dispose();
-        // Font matching is expensive (SKFontManager.MatchFamily). Only rebuild
-        // the renderer when something it actually bakes in has changed — a
-        // colour edit does not need new typefaces.
-        string sig = $"{Screen.Theme.FontFamily}|{Screen.Theme.CaptionSize}|" +
-                     $"{Screen.Theme.ValueSize}|{Screen.Theme.CaptionBold}|{Screen.Theme.ValueBold}";
-        if (_renderer is null || sig != _rendererSig)
-        {
-            _renderer?.Dispose();
-            _renderer = new ScreenRenderer(Screen.Theme);
-            _rendererSig = sig;
-        }
+        // Remove the tray icon explicitly: leaving it to finalisation can leave
+        // a dead entry in the tray after the process is gone.
+        try { _tray?.Dispose(); } catch (Exception) { }
+        _tray = null;
+        _logger?.Dispose();
+        // This block used to hold a COPY of RebuildScreenState reader code, so
+        // shutdown constructed a renderer instead of releasing one - the exit
+        // path allocated a fresh ScreenRenderer and then dropped it undisposed.
+        _renderer?.Dispose();
+        _renderer = null;
         _canvas.Dispose();
         _reg?.Dispose();
+        // Released last, and only on a real exit: close-to-tray must keep it.
+        App.Instance?.Dispose();
+        App.Instance = null;
     }
 
     private ScreenSpec Screen => _set.Screens[Math.Clamp(_screenIndex, 0, _set.Screens.Count - 1)];
@@ -187,9 +295,12 @@ public sealed partial class MainWindow : Window
             _rendererSig = sig;
         }
 
-        var layout = ScreenLayout.Compute(Screen, out var narrow);
+        var (layout, buttonLayout) = ScreenLayout.ComputeAll(Screen, out var narrow);
+        _buttonLayout = buttonLayout;
         _histories = layout.Select(l => new History(Math.Max(2, (int)l.Rect.Width))).ToList();
 
+        _preview.SetScreen(Screen);
+        _preview.SelectedIndex = _moduleIndex;
         _reg?.SetActive(_set.Screens.SelectMany(s => s.Modules).Select(m => m.Source).Distinct());
         _status.Text = narrow.Count > 0
             ? "⚠ " + string.Join("; ", narrow)
@@ -201,9 +312,12 @@ public sealed partial class MainWindow : Window
     {
         if (!_ready || _renderer is null || _reg is null) return;
 
+        MaintainDevice();
+
         _reg.Sample();
 
-        var layout = ScreenLayout.Compute(Screen, out _);
+        var (layout, buttonLayout) = ScreenLayout.ComputeAll(Screen, out _);
+        _buttonLayout = buttonLayout;
         while (_histories.Count < layout.Count) _histories.Add(new History(160));
 
         for (int i = 0; i < layout.Count && i < _histories.Count; i++)
@@ -213,11 +327,18 @@ public sealed partial class MainWindow : Window
         }
 
         _renderer!.Draw(_canvas, layout, _histories,
-            k => { double v = _reg.Read(k); return double.IsNaN(v) ? 0 : v; });
+            k => { double v = _reg.Read(k); return double.IsNaN(v) ? 0 : v; },
+            Screen.Background, _clock.Elapsed,
+            buttonLayout, _pressedButton, _flashUntil);
         if (_set.ShowPageIndicator)
             PageIndicator.Draw(_canvas.Canvas, _screenIndex, _set.Screens.Count, Screen.Theme.CaptionColor);
 
         _preview.Update(_canvas);
+        if (_view == "dashboard") _dashboard?.Refresh();
+        else if (_view == "home") _home?.Refresh();
+        // The Home device card carries the same frame as the panel editor
+        // preview, so whichever view is up shows live output.
+        _home?.Preview.Update(_canvas);
 
         // Diagnostic only: RSS climbing does not distinguish a leak from a GC
         // that simply has no reason to run yet. With NEXUSMANAGER_GCPROBE=1 the
@@ -231,12 +352,32 @@ public sealed partial class MainWindow : Window
         // 121 HID writes cost ~15 ms. Off the UI thread, and never queued twice.
         if (_liveToDevice.IsChecked == true && _device is not null && !_pushBusy)
         {
+            // Captured once: the reconnect path may null _device between the
+            // guard above and the push below, on a different thread.
+            var dev = _device;
             _pushBusy = true;
             Array.Copy(_preview.Frame, _pushBuffer, NexusDevice.FrameBytes);
             _ = Task.Run(() =>
             {
-                try { _device.PushFrame(_pushBuffer); }
-                catch (Exception) { }
+                try { dev.PushFrame(_pushBuffer); _pushFailures = 0; }
+                catch (Exception)
+                {
+                    // An unplugged panel keeps a non-null handle whose writes
+                    // fail forever. Swallowing them silently means the reconnect
+                    // path never runs and the strip stays dark until a restart.
+                    if (++_pushFailures >= 8)
+                    {
+                        Console.Error.WriteLine("[device] panel stopped responding; will reconnect");
+                        var dead = dev;
+                        // The touch stream is on the same physical device, so it
+                        // is dead too - leaving it open means the reconnect never
+                        // reopens it and swipe stays broken until a restart.
+                        Avalonia.Threading.Dispatcher.UIThread.Post(StopTouch);
+                        _device = null;
+                        _pushFailures = 0;
+                        try { dead?.Dispose(); } catch (Exception) { }
+                    }
+                }
                 finally { _pushBusy = false; }
             });
         }
@@ -249,6 +390,7 @@ public sealed partial class MainWindow : Window
             var d = NexusDevice.Open();
             d.SetBrightness(_set.Brightness);
             _device = d;
+            StartTouch();
         }
         catch (Exception)
         {
@@ -259,6 +401,46 @@ public sealed partial class MainWindow : Window
                 _liveToDevice.IsEnabled = false;
             });
         }
+    }
+
+    /// <summary>
+    /// Retries the connection while the panel is dark.
+    ///
+    /// Without this the device is opened exactly once at startup, so a panel
+    /// that was unplugged at login - or replugged at any point after - stays
+    /// blank until the application is restarted. A blank strip on the keyboard
+    /// reads as broken hardware, so the reconnect is part of the feature, not
+    /// a nicety.
+    ///
+    /// Throttled: opening a HID device that is not there costs an enumeration
+    /// of every HID node, which is not something to do four times a second.
+    /// </summary>
+    private void MaintainDevice()
+    {
+        if (_device is not null || _reopening) return;
+        if (_reopenClock.Elapsed < TimeSpan.FromSeconds(3)) return;
+        _reopenClock.Restart();
+        _reopening = true;
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var d = NexusDevice.Open();
+                d.SetBrightness(_settings.Brightness);
+                _device = d;
+                // Gestures need their own stream, and it has to be opened
+                // whenever the device is - including after a reconnect.
+                Dispatcher.UIThread.Post(StartTouch);
+                Dispatcher.UIThread.Post(() =>
+                {
+                    _liveToDevice.IsEnabled = true;
+                    _liveToDevice.IsChecked = true;
+                    Console.Error.WriteLine("[device] panel connected");
+                });
+            }
+            catch (Exception) { /* still absent; try again on the next window */ }
+            finally { _reopening = false; }
+        });
     }
 
     /// <summary>A value changed: refresh what is RENDERED. Deliberately does not
@@ -285,6 +467,7 @@ public sealed partial class MainWindow : Window
     {
         if (!_ready || _building) return;
         RebuildScreenState();
+        QueueAutosave();
     }
 
     /// <summary>Structural change (module added, removed, reordered, screen
@@ -294,5 +477,6 @@ public sealed partial class MainWindow : Window
         if (!_ready || _building) return;
         RebuildScreenState();
         Building(RefreshModuleList);
+        QueueAutosave();
     }
 }

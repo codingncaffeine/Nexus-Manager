@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using NexusManager.Render;
 using NexusManager.Sensors;
 
@@ -137,6 +138,90 @@ public sealed partial class MainWindow
         _themeProps.Children.Add(Row("Warn", Colour(t.Warn, v => t.Warn = v ?? "#FFAA28")));
         _themeProps.Children.Add(Row("Hot", Colour(t.Hot, v => t.Hot = v ?? "#FF463C")));
 
+        // --- Background ------------------------------------------------------
+        // Custom animation lives here, and it needs no new file format: Corsair
+        // express animation as nothing more than "the background file is a GIF".
+        // Their .cuescreens carries no frame, duration or loop field anywhere -
+        // every element across all six official packs was enumerated to check.
+        var bg = Screen.Background;
+        _themeProps.Children.Add(Head("Background"));
+
+        var pathBox = Text(bg.Image, v =>
+        {
+            bg.Image = string.IsNullOrWhiteSpace(v) ? null : v;
+            _crop.SetImage(bg.Image, bg.Fit, bg.Zoom, bg.FocusX, bg.FocusY);
+            Changed(); RefreshBackgroundInfo();
+        });
+        var browse = new Button
+        {
+            Content = "…", Width = 30, Padding = new Thickness(0),
+            [ToolTip.TipProperty] = "Choose an image or animation",
+        };
+        browse.Click += async (_, _) => await PickBackgroundAsync(pathBox);
+        var clear = new Button
+        {
+            Content = "✕", Width = 30, Padding = new Thickness(0),
+            [ToolTip.TipProperty] = "Use the background colour instead",
+        };
+        clear.Click += (_, _) =>
+        {
+            bg.Image = null;
+            _crop.SetImage(null, bg.Fit, bg.Zoom, bg.FocusX, bg.FocusY);
+            Building(() => pathBox.Text = "");
+            Changed(); RefreshBackgroundInfo();
+        };
+        var pathRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto") };
+        Grid.SetColumn(pathBox, 0); pathRow.Children.Add(pathBox);
+        Grid.SetColumn(browse, 1);  pathRow.Children.Add(browse);
+        Grid.SetColumn(clear, 2);   pathRow.Children.Add(clear);
+        _themeProps.Children.Add(Row("Image", pathRow));
+
+        _zoomSlider = new Slider
+        {
+            Minimum = 1, Maximum = 8, Value = Math.Clamp(bg.Zoom, 1, 8),
+            Width = 200, SmallChange = 0.1, LargeChange = 0.5,
+        };
+        _zoomSlider.PropertyChanged += (_, e) =>
+        {
+            if (_building || e.Property != RangeBase.ValueProperty) return;
+            bg.Zoom = _zoomSlider.Value;
+            _crop.SetGeometry(bg.Fit, bg.Zoom, bg.FocusX, bg.FocusY);
+            Changed(); RefreshBackgroundInfo();
+        };
+
+        var fit = new ComboBox
+        {
+            ItemsSource = Enum.GetValues<BackgroundFit>().ToList(),
+            SelectedItem = bg.Fit,
+        };
+        fit.SelectionChanged += (_, _) =>
+        {
+            if (_building || fit.SelectedItem is not BackgroundFit f) return;
+            bg.Fit = f;
+            _crop.SetImage(bg.Image, bg.Fit, bg.Zoom, bg.FocusX, bg.FocusY);
+            Changed(); RefreshBackgroundInfo();
+        };
+        _themeProps.Children.Add(Row("Fit", fit));
+
+        // Drag-to-position. A 640x48 strip is a 13:1 sliver, so for anything
+        // that is not already that shape, WHICH part shows is the whole choice.
+        _crop.SetImage(bg.Image, bg.Fit, bg.Zoom, bg.FocusX, bg.FocusY);
+        WireCropOnce();
+        _themeProps.Children.Add(_crop);
+        _themeProps.Children.Add(Style.Note(
+            "Drag the bright box to choose what reaches the panel. Scroll to zoom. "
+            + "Animated .gif and .webp both play."));
+        _themeProps.Children.Add(Row("Zoom", _zoomSlider));
+        _themeProps.Children.Add(Row("Opacity", Num(bg.Opacity, v =>
+            { bg.Opacity = (byte)Math.Clamp(v, 0, 255); Changed(); })));
+        _themeProps.Children.Add(Row("Speed", Num(bg.Speed, v =>
+            { bg.Speed = Math.Clamp(v, 0.05, 20); Changed(); })));
+        _themeProps.Children.Add(Row("Scroll px/s", Num(bg.ScrollSpeed, v =>
+            { bg.ScrollSpeed = Math.Clamp(v, 0, 600); Changed(); })));
+        _themeProps.Children.Add(Check("Loop animation", bg.Loop, v => { bg.Loop = v; Changed(); }));
+        _themeProps.Children.Add(_bgInfo);
+        RefreshBackgroundInfo();
+
         _themeProps.Children.Add(Head("Chart"));
         _themeProps.Children.Add(Row("Fill alpha", Num(t.ChartFillAlpha, v => { t.ChartFillAlpha = (byte)Math.Clamp(v, 0, 255); Changed(); })));
         _themeProps.Children.Add(Row("Line alpha", Num(t.ChartLineAlpha, v => { t.ChartLineAlpha = (byte)Math.Clamp(v, 0, 255); Changed(); })));
@@ -149,6 +234,9 @@ public sealed partial class MainWindow
             try { _device?.SetBrightness(_set.Brightness); } catch (Exception) { }
         })));
         _themeProps.Children.Add(Check("Page dots", _set.ShowPageIndicator, v => { _set.ShowPageIndicator = v; Changed(); }));
+        WireButtonList();
+        BuildButtonSection();
+
         _themeProps.Children.Add(new TextBlock
         {
             Text = "Judge colours on the PANEL, not here: its green primary is\n" +
@@ -179,5 +267,117 @@ public sealed partial class MainWindow
         var cb = new CheckBox { Content = label, IsChecked = value };
         cb.IsCheckedChanged += (_, _) => { if (_building) return; set(cb.IsChecked == true); };
         return cb;
+    }
+}
+
+public sealed partial class MainWindow
+{
+    /// <summary>Reports what the background actually decoded to. A mistyped path
+    /// or an unsupported file otherwise presents as "the feature does nothing",
+    /// which is the hardest kind of failure to diagnose from the outside.</summary>
+    /// <summary>Drag-to-choose-the-crop, for images that are not already 13:1.</summary>
+    private readonly CropPicker _crop = new() { Margin = new Thickness(0, 6, 0, 4) };
+    private Slider? _zoomSlider;
+
+    /// <summary>
+    /// Subscribes the crop picker ONCE.
+    ///
+    /// _crop is a field that outlives the property panel, but the panel is torn
+    /// down and rebuilt on every screen change - so subscribing there stacks a
+    /// fresh handler each time, and every one of them holds the BackgroundSpec
+    /// of the screen that was selected when it was created. One drag would then
+    /// write focus into several screens at once, most of them not on display.
+    /// </summary>
+    private bool _cropWired;
+
+    private void WireCropOnce()
+    {
+        if (_cropWired) return;
+        _cropWired = true;
+
+        // Reads Screen.Background at the moment of the drag rather than
+        // capturing one, so it always edits the screen actually shown.
+        _crop.FocusChanged += (fx, fy) =>
+        {
+            Screen.Background.FocusX = fx;
+            Screen.Background.FocusY = fy;
+            Changed(); RefreshBackgroundInfo();
+        };
+        _crop.ZoomChanged += z =>
+        {
+            Screen.Background.Zoom = z;
+            if (_zoomSlider is not null) Building(() => _zoomSlider.Value = z);
+            Changed(); RefreshBackgroundInfo();
+        };
+    }
+
+    private readonly TextBlock _bgInfo = new()
+    {
+        Foreground = Brushes.Gray, FontSize = 11,
+        TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0),
+    };
+
+    private void RefreshBackgroundInfo()
+    {
+        var bg = Screen.Background;
+        if (!bg.HasImage)
+        {
+            _bgInfo.Text = "No image: the background colour is used. "
+                         + "Point this at a .gif (or animated .webp) and it plays, "
+                         + "which is exactly how iCUE does animation.";
+            return;
+        }
+
+        // Read from the RENDERER's decode, not by decoding again here: reporting
+        // on a second, separate decode could disagree with what is on the panel.
+        var img = _renderer?.BackgroundImage;
+        string? err = _renderer?.BackgroundError;
+
+        if (img is null)
+        {
+            _bgInfo.Text = err is null ? "Not loaded yet." : $"⚠ {err}";
+            return;
+        }
+
+        string what = img.IsAnimated
+            ? $"{img.FrameCount} frames · {img.Duration.TotalMilliseconds:F0} ms · "
+              + $"{img.FrameCount / Math.Max(0.001, img.Duration.TotalSeconds):F1} fps"
+            : "still image";
+        _bgInfo.Text = $"{what} · {img.Size.Width}×{img.Size.Height} · "
+                     + $"{img.BytesUsed / 1024.0:F0} KB"
+                     + (err is null ? "" : $"\n⚠ {err}");
+    }
+
+    private async Task PickBackgroundAsync(TextBox pathBox)
+    {
+        try
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "Choose a background image or animation",
+                AllowMultiple = false,
+                FileTypeFilter =
+                [
+                    new FilePickerFileType("Images and animations")
+                    {
+                        Patterns = ["*.gif", "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.webp"],
+                    },
+                ],
+            });
+            if (files.Count == 0) return;
+            string? path = files[0].TryGetLocalPath();
+            if (path is null) return;
+
+            Screen.Background.Image = path;
+            _crop.SetImage(path, Screen.Background.Fit, Screen.Background.Zoom,
+                           Screen.Background.FocusX, Screen.Background.FocusY);
+            Building(() => pathBox.Text = path);
+            Changed();
+            RefreshBackgroundInfo();
+        }
+        catch (Exception ex)
+        {
+            _bgInfo.Text = $"⚠ {ex.Message}";
+        }
     }
 }

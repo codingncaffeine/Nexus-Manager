@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Nexus Manager (panel)
+Comment=Keeps the Corsair iCUE NEXUS panel running, in the system tray
+# --tray brings the process up with only a tray icon: the panel starts drawing
+# at login without a window being thrown at the user. The window is opened from
+# the tray, and closing it hides rather than quits - so dismissing it never
+# blanks the display.
+Exec=nexus-manager-editor --tray
+Icon=nexus-manager
+Terminal=false
+Categories=System;Monitor;
+StartupWMClass=nexus-manager-editor
+X-GNOME-Autostart-enabled=true

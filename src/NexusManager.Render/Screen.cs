@@ -63,6 +63,14 @@ public sealed class ScreenSpec
     public Theme Theme { get; set; } = new();
     public List<ModuleSpec> Modules { get; set; } = [];
 
+    /// <summary>Colour, still image, or animation behind the modules. Corsair
+    /// express animation as nothing more than "the background file is a GIF",
+    /// and pointing this at one does exactly that.</summary>
+    public BackgroundSpec Background { get; set; } = new();
+
+    /// <summary>Touch buttons on this screen. Share the strip with Modules.</summary>
+    public List<ButtonSpec> Buttons { get; set; } = [];
+
     /// <summary>
     /// Narrowest module that stays readable. A 3-digit value with decimals at the
     /// default type size needs roughly this much before the number collides with
@@ -70,6 +78,28 @@ public sealed class ScreenSpec
     /// something illegible.
     /// </summary>
     public int MinModuleWidth { get; set; } = 72;
+
+    /// <summary>
+    /// Narrowest BUTTON that stays usable. Lower than the readout minimum on
+    /// purpose: these are different constraints. A readout has to fit a
+    /// three-digit value beside its unit; a button only has to be hittable, and
+    /// an icon-only one is fine well below that. D11 puts a comfortable target
+    /// near 106px, so this is the floor, not the recommendation.
+    /// </summary>
+    public int MinButtonWidth { get; set; } = 56;
+
+    /// <summary>
+    /// Empty strip before the first cell and after the last, in the same weight
+    /// units as the cells.
+    ///
+    /// Without these a screen's cells always fill all 640px, so a screen with a
+    /// SINGLE button had to stretch it edge to edge and there was no boundary to
+    /// drag - one cell has no neighbour to resize against. iCUE has the same
+    /// shape for the same reason: six fixed slots, and a screen using fewer
+    /// leaves the rest as background.
+    /// </summary>
+    public double LeadWeight { get; set; }
+    public double TrailWeight { get; set; }
 
     [JsonIgnore] public int MaxModules => NexusCanvas.Width / MinModuleWidth;
 }
@@ -81,30 +111,93 @@ public static class ScreenLayout
     /// <summary>Distributes the strip across modules in proportion to their weights.</summary>
     /// <param name="tooNarrow">Modules that came out below the minimum width. They
     /// are still returned — the caller decides whether to warn or refuse.</param>
-    public static List<ModuleLayout> Compute(ScreenSpec screen, out List<string> tooNarrow)
+    /// <summary>
+    /// Lays out modules AND buttons across the one 640px strip.
+    ///
+    /// They share a single weight budget rather than getting half the strip
+    /// each: a screen with four readouts and one button should give the button
+    /// a fifth, not a half.
+    /// </summary>
+    public static (List<ModuleLayout> Modules, List<ButtonLayout> Buttons) ComputeAll(
+        ScreenSpec screen, out List<string> tooNarrow)
     {
         tooNarrow = [];
-        var result = new List<ModuleLayout>();
-        if (screen.Modules.Count == 0) return result;
+        var modules = new List<ModuleLayout>();
+        var buttons = new List<ButtonLayout>();
+        int cells = screen.Modules.Count + screen.Buttons.Count;
+        if (cells == 0) return (modules, buttons);
 
-        double total = screen.Modules.Sum(m => Math.Max(0.0001, m.Weight));
-        float x = 0;
+        // Lead and trail are part of the same budget, so cells keep their
+        // proportions as the surrounding space grows.
+        double lead = Math.Max(0, screen.LeadWeight);
+        double trail = Math.Max(0, screen.TrailWeight);
+        double total = lead + trail
+                     + screen.Modules.Sum(m => Math.Max(0.0001, m.Weight))
+                     + screen.Buttons.Sum(b => Math.Max(0.0001, b.Weight));
+        if (total <= 0) return (modules, buttons);
+        // Cells start after the leading gap.
+        float x = (float)(NexusCanvas.Width * lead / total);
+        int placed = 0;
+        // The last CELL only absorbs the rounding when there is no trailing gap;
+        // otherwise it would swallow the gap it is supposed to leave.
+        bool lastFills = trail <= 0;
 
-        for (int i = 0; i < screen.Modules.Count; i++)
+        foreach (var m in screen.Modules)
         {
-            var m = screen.Modules[i];
-            // Last module absorbs rounding so the strip is filled exactly.
-            float w = i == screen.Modules.Count - 1
-                ? NexusCanvas.Width - x
-                : (float)Math.Round(NexusCanvas.Width * Math.Max(0.0001, m.Weight) / total);
-
-            result.Add(new ModuleLayout(m, new SKRect(x, 0, x + w, NexusCanvas.Height), i));
-
-            if (w < screen.MinModuleWidth)
-                tooNarrow.Add($"'{(string.IsNullOrEmpty(m.Label) ? m.Source : m.Label)}' " +
-                              $"is {w:0}px, below the {screen.MinModuleWidth}px minimum");
-            x += w;
+            float w = Advance(ref x, m.Weight, total, lastFills && ++placed == cells);
+            modules.Add(new ModuleLayout(m, Cell(x, w), modules.Count));
+            Narrow(tooNarrow, screen, w, string.IsNullOrEmpty(m.Label) ? m.Source : m.Label);
         }
-        return result;
+        foreach (var b in screen.Buttons)
+        {
+            float w = Advance(ref x, b.Weight, total, lastFills && ++placed == cells);
+            buttons.Add(new ButtonLayout(b, Cell(x, w), buttons.Count));
+            NarrowButton(tooNarrow, screen, w, string.IsNullOrEmpty(b.Label) ? "button" : b.Label);
+        }
+        return (modules, buttons);
     }
+
+    /// <summary>Advances the cursor and returns the cell width. The LAST cell
+    /// absorbs rounding so the strip is filled to the pixel.</summary>
+    private static float Advance(ref float x, double weight, double total, bool last)
+    {
+        float w = last
+            ? NexusCanvas.Width - x
+            : (float)Math.Round(NexusCanvas.Width * Math.Max(0.0001, weight) / total);
+        x += w;
+        return w;
+    }
+
+    private static SKRect Cell(float xAfter, float w) =>
+        new(xAfter - w, 0, xAfter, NexusCanvas.Height);
+
+    /// <summary>
+    /// Which button a tap at <paramref name="x"/> hits, or -1. X is the only
+    /// axis the panel reports and buttons are full-height cells, so this is a
+    /// range check - but it lives here, shared by the tray app and the daemon,
+    /// so the two can never disagree about where a press landed.
+    /// </summary>
+    public static int HitTest(IReadOnlyList<ButtonLayout> buttons, float x)
+    {
+        for (int i = 0; i < buttons.Count; i++)
+            if (x >= buttons[i].Rect.Left && x < buttons[i].Rect.Right) return i;
+        return -1;
+    }
+
+    private static void NarrowButton(List<string> into, ScreenSpec screen, float w, string name)
+    {
+        if (w < screen.MinButtonWidth)
+            into.Add($"button '{name}' is {w:0}px, below the {screen.MinButtonWidth}px minimum");
+    }
+
+    private static void Narrow(List<string> into, ScreenSpec screen, float w, string name)
+    {
+        if (w < screen.MinModuleWidth)
+            into.Add($"'{name}' is {w:0}px, below the {screen.MinModuleWidth}px minimum");
+    }
+
+    /// <summary>Modules only. Kept for callers that do not draw buttons.</summary>
+    public static List<ModuleLayout> Compute(ScreenSpec screen, out List<string> tooNarrow)
+        => ComputeAll(screen, out tooNarrow).Modules;
+
 }

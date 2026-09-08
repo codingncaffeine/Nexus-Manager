@@ -8,8 +8,19 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
+# The HEADLESS renderer, for a machine with no tray to sit in.
+#
+# On a normal desktop use the tray application instead - enable it from
+# Settings > General > "Start with the system", or install
+# nexus-manager-tray.desktop. It gives a tray icon AND keeps the panel alive,
+# which this unit cannot do because it has no window and no tray.
+#
+# Do not run both: they would each try to own the same HID device.
 ExecStart=/usr/bin/nexus-manager daemon
-Restart=on-failure
+
+# The panel is physical. If the renderer dies, a blank strip on the keyboard
+# reads as broken hardware, so always come back - not just on failure.
+Restart=always
 RestartSec=5
 
 # The panel is a physical device; if the unit is stopped the display must not be

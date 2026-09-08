@@ -16,6 +16,15 @@ ln -sf "$root/src/NexusManager.Editor/bin/Release/net10.0/nexus-manager-editor" 
 
 install -Dm644 "$here/nexus-manager.desktop" "$share/applications/nexus-manager.desktop"
 
+# Autostart entry for the tray application. This is what keeps the panel
+# alive: without something starting at login the strip is simply blank until
+# the user opens the window by hand.
+if [ "${NEXUS_AUTOSTART:-1}" = 1 ]; then
+    install -Dm644 "$here/nexus-manager-tray.desktop" \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/nexus-manager.desktop"
+    echo "Autostart enabled (NEXUS_AUTOSTART=0 to skip)."
+fi
+
 # Copy the WHOLE icon tree rather than naming sizes: an allow-list of filenames
 # silently ships fewer than intended while every step still reports success.
 find "$here/icons" -type f -name '*.png' -print0 | while IFS= read -r -d '' f; do

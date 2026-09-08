@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using NexusManager.Actions;
 using NexusManager.Device;
 using NexusManager.Render;
 using NexusManager.Sensors;
@@ -11,25 +12,52 @@ namespace NexusManager.Cli;
 /// </summary>
 public sealed class Daemon : IDisposable
 {
-    private readonly NexusDevice _dev;
+    /// <summary>Not readonly: a replugged panel is a NEW handle, and a service
+    /// that cannot take one has to be restarted by hand after every unplug.</summary>
+    private NexusDevice _dev;
     private readonly SensorRegistry _reg;
     private readonly ScreenSet _set;
 
     private readonly List<List<ModuleLayout>> _layouts = [];
+    private readonly List<List<ButtonLayout>> _buttonLayouts = [];
     private readonly List<List<History>> _histories = [];
     private readonly List<ScreenRenderer> _renderers = [];
 
     private int _screen;
     private int _fps;
 
+    /// <summary>Carries out button presses. The headless daemon needs this as
+    /// much as the tray app does - a capability that exists in only one of them
+    /// is how swipe was lost when the tray app became the panel owner.</summary>
+    private readonly ActionRunner _actions = new();
+    private int _pressedButton = -1;
+    private TimeSpan _flashUntil;
+    /// <summary>Render-loop clock, so the press flash expires on wall time.</summary>
+    private TimeSpan _clock;
+
     public Daemon(NexusDevice dev, SensorRegistry reg, ScreenSet set)
     {
         _dev = dev; _reg = reg; _set = set;
+
+        _actions.GoToScreen = name =>
+        {
+            int i = _set.Screens.FindIndex(
+                s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (i < 0) return false;
+            _screen = i;
+            return true;
+        };
+        _actions.AdjustBrightness = delta =>
+        {
+            _set.Brightness = (int)Math.Clamp(_set.Brightness + delta, 0, 100);
+            try { _dev.SetBrightness(_set.Brightness); } catch (Exception) { }
+        };
         _screen = Math.Clamp(set.StartScreen, 0, Math.Max(0, set.Screens.Count - 1));
 
         foreach (var screen in set.Screens)
         {
-            var layout = ScreenLayout.Compute(screen, out var narrow);
+            var (layout, buttons) = ScreenLayout.ComputeAll(screen, out var narrow);
+            _buttonLayouts.Add(buttons);
             foreach (string w in narrow) Console.Error.WriteLine($"  warning: {screen.Name}: {w}");
             _layouts.Add(layout);
             _renderers.Add(new ScreenRenderer(screen.Theme));
@@ -58,6 +86,7 @@ public sealed class Daemon : IDisposable
         var period = TimeSpan.FromSeconds(1.0 / Math.Clamp(_set.TargetFps, 1, 65));
         var sampleEvery = TimeSpan.FromMilliseconds(Math.Max(50, _set.SampleIntervalMs));
         var sw = Stopwatch.StartNew();
+        int fails = 0;
         TimeSpan nextSample = TimeSpan.Zero;
         long tick = 0;
 
@@ -87,14 +116,33 @@ public sealed class Daemon : IDisposable
 
                 int cur = _screen;
                 _renderers[cur].Draw(canvas, _layouts[cur], _histories[cur],
-                    k => { double v = _reg.Read(k); return double.IsNaN(v) ? 0 : v; });
+                    k => { double v = _reg.Read(k); return double.IsNaN(v) ? 0 : v; },
+                    _set.Screens[cur].Background, sw.Elapsed,
+                    _buttonLayouts[cur], _pressedButton, _flashUntil);
+                _clock = sw.Elapsed;
 
                 if (_set.ShowPageIndicator)
                     PageIndicator.Draw(canvas.Canvas, cur, _set.Screens.Count,
                                        _set.Screens[cur].Theme.CaptionColor);
 
                 canvas.CopyTo(frame);
-                _dev.PushFrame(frame);
+                try
+                {
+                    _dev.PushFrame(frame);
+                    fails = 0;
+                }
+                catch (Exception ex)
+                {
+                    // A service must survive the panel being unplugged. Without
+                    // this the first failed write ends the render loop and the
+                    // unit exits, so a replug needs a manual restart.
+                    if (++fails >= 8)
+                    {
+                        Console.Error.WriteLine($"  panel lost ({ex.Message}); reconnecting");
+                        fails = 0;
+                        if (!await ReconnectAsync(ct).ConfigureAwait(false)) break;
+                    }
+                }
             }
         }
         finally
@@ -102,6 +150,35 @@ public sealed class Daemon : IDisposable
             _fps = sw.Elapsed.TotalSeconds > 0 ? (int)(tick / sw.Elapsed.TotalSeconds) : 0;
             canvas.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Waits for the panel to come back, then reopens it.
+    ///
+    /// Returns false only when cancellation is requested, so the caller can
+    /// tell "stopping" from "still waiting". The retry is slow on purpose:
+    /// opening an absent HID device enumerates every node on the machine.
+    /// </summary>
+    private async Task<bool> ReconnectAsync(CancellationToken ct)
+    {
+        try { _dev.Dispose(); } catch (Exception) { }
+
+        while (!ct.IsCancellationRequested)
+        {
+            try { await Task.Delay(TimeSpan.FromSeconds(3), ct).ConfigureAwait(false); }
+            catch (OperationCanceledException) { return false; }
+
+            try
+            {
+                var d = NexusDevice.Open();
+                d.SetBrightness(Math.Clamp(_set.Brightness, 0, 100));
+                _dev = d;
+                Console.Error.WriteLine("  panel reconnected");
+                return true;
+            }
+            catch (Exception) { /* still absent */ }
+        }
+        return false;
     }
 
     /// <summary>Swipe moves between screens; the gesture layer has already
@@ -113,8 +190,24 @@ public sealed class Daemon : IDisposable
         {
             case GestureKind.SwipeLeft:  Advance(+1); break;   // content moves left => next
             case GestureKind.SwipeRight: Advance(-1); break;
+            case GestureKind.Tap: OnTap(g); break;
             default: break;
         }
+    }
+
+    /// <summary>
+    /// A tap. X is the only axis the panel reports, and buttons are full-height
+    /// cells, so hit testing is a range check on the end position.
+    /// </summary>
+    private void OnTap(Gesture g)
+    {
+        var buttons = _buttonLayouts[_screen];
+        int hit = ScreenLayout.HitTest(buttons, g.EndX);
+        if (hit < 0) return;
+        _pressedButton = hit;
+        _flashUntil = _clock + ButtonRenderer.FlashDuration;
+        Console.Error.WriteLine($"  button [{hit}] '{buttons[hit].Spec.Label}' -> {buttons[hit].Spec.Action}");
+        _actions.Run(buttons[hit].Spec.Action);
     }
 
     private void Advance(int delta)
