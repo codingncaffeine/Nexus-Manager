@@ -2,6 +2,8 @@
 
 # Nexus Manager
 
+[![build](https://github.com/codingncaffeine/Nexus-Manager/actions/workflows/build.yml/badge.svg)](https://github.com/codingncaffeine/Nexus-Manager/actions/workflows/build.yml)
+
 A sensor display for the Corsair iCUE NEXUS on Linux.
 
 The NEXUS is a 640×48 touchscreen that clips to a keyboard. Corsair ships it
