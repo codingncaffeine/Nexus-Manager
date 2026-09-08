@@ -249,9 +249,9 @@ public sealed partial class MainWindow : Window
         }
         try
         {
-            // Never leave stale readings on the panel.
-            _device?.Blank();
-            _device?.SetBrightness(0);
+            // Hand the panel back to the firmware animation rather than leaving a
+            // dead black strip on the keyboard. See NexusDevice.HandBack.
+            _device?.HandBack(_set.IdleAnimation, _set.Brightness);
         }
         catch (Exception) { }
         StopTouch();

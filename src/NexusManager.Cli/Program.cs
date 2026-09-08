@@ -262,7 +262,7 @@ switch (cmd)
         using var d = NexusDevice.Open();
         d.Blank();
         d.SetBrightness(0);
-        Console.WriteLine("panel blanked");
+        Console.WriteLine("panel handed back to its firmware animation");
         break;
     }
 
@@ -319,11 +319,10 @@ switch (cmd)
         await daemon.RunAsync(cts.Token);
         touchStream?.Dispose();
 
-        // Blank on exit: a monitoring panel frozen on stale numbers looks exactly
-        // like a working one, which is worse than showing nothing.
-        dev.Blank();
-        dev.SetBrightness(0);
-        Console.WriteLine($"stopped ({daemon.AchievedFps} fps achieved); panel blanked");
+        // Hand the panel back to its firmware instead of killing it: the device
+        // plays a Corsair animation on its own when nothing is driving it.
+        dev.HandBack(set.IdleAnimation, set.Brightness);
+        Console.WriteLine($"stopped ({daemon.AchievedFps} fps achieved); panel handed back to its firmware animation");
         break;
     }
 
@@ -367,6 +366,55 @@ switch (cmd)
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
         Console.WriteLine("Gesture stream (Ctrl-C to stop). Fast swipes are stitched per D13.");
         await touch.RunAsync(cts.Token);
+        break;
+    }
+
+    case "anim":
+    {
+        // The three animations baked into the firmware (`03 0D <1-3> <loop>`).
+        // ⛔ The command has been in NexusDevice since the protocol was written
+        // and NOTHING has ever called it - no verb reached it - so until this
+        // runs it is documented rather than proved.
+        //
+        // Deliberately does NOT blank on exit, unlike every other verb here:
+        // the animation runs in firmware and keeps going after this process is
+        // gone, which is the whole point of looking at it.
+        using var animInstance = SingleInstance.TryAcquire("anim");
+        if (animInstance is null)
+        {
+            Console.Error.WriteLine(
+                $"The panel is already being driven by {SingleInstance.DescribeHolder()}.");
+            Console.Error.WriteLine("Stop it first - a running screen loop overwrites the animation.");
+            return 1;
+        }
+
+        using var animDev = NexusDevice.Open();
+        string which = args.Length > 1 ? args[1] : "";
+
+        if (string.Equals(which, "stop", StringComparison.OrdinalIgnoreCase))
+        {
+            animDev.StopAnimation();
+            Console.WriteLine("animation stopped (the panel keeps whatever was last on it)");
+            break;
+        }
+
+        if (!int.TryParse(which, out int animId) || animId is < 1 or > 3)
+        {
+            Console.Error.WriteLine("usage: nexus-manager anim <1|2|3> [--loop]");
+            Console.Error.WriteLine("       nexus-manager anim stop");
+            return 1;
+        }
+
+        // ⛔ Brightness FIRST. A previous run of this app ends by blanking and
+        // setting the backlight to 0, so an animation started after that plays
+        // perfectly and is invisible - which would read as "the command does
+        // nothing".
+        animDev.SetBrightness(100);
+        animDev.PlayAnimation(animId, args.Contains("--loop"));
+        Console.WriteLine($"playing firmware animation {animId}"
+                          + (args.Contains("--loop") ? " (looping)" : " (once)"));
+        Console.WriteLine("It runs in firmware and keeps going after this exits.");
+        Console.WriteLine("`nexus-manager anim stop` ends it; starting the app takes the panel back.");
         break;
     }
 
@@ -515,6 +563,7 @@ switch (cmd)
               fonts [--all]       font families the picker offers (--all lists the dropped)
               image <file>        inspect a background image or animation
               blank               clear the panel and turn its backlight off
+              anim <1-3> [--loop] play a firmware animation (anim stop to end it)
               preview [--screen N] render a screen to a PNG, no device needed
               key <combo>         send a synthetic keypress (ctrl+alt+t)
 

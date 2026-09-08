@@ -118,10 +118,9 @@ public static class Calibrate
         catch (OperationCanceledException) { }
 
         try { await pump; } catch (Exception) { }
-        dev.Blank();
-        dev.SetBrightness(0);
+        dev.HandBack(1, 100);   // leave the firmware animation, never a dead strip
         Console.WriteLine();
-        Console.WriteLine("Panel blanked.");
+        Console.WriteLine("Panel handed back to its firmware animation.");
         return 0;
     }
 
@@ -279,10 +278,9 @@ public static class Calibrate
         try { cts.Cancel(); } catch (Exception) { }
         try { await pump; } catch (Exception) { }
 
-        dev.Blank();
-        dev.SetBrightness(0);
+        dev.HandBack(1, 100);   // leave the firmware animation, never a dead strip
         Console.WriteLine();
-        Console.WriteLine("Panel blanked.");
+        Console.WriteLine("Panel handed back to its firmware animation.");
         Console.WriteLine();
 
         if (runs.Count == 0)
@@ -442,10 +440,9 @@ public static class Calibrate
         try { cts.Cancel(); } catch (Exception) { }
         try { await pump; } catch (Exception) { }
 
-        dev.Blank();
-        dev.SetBrightness(0);
+        dev.HandBack(1, 100);   // leave the firmware animation, never a dead strip
         Console.WriteLine();
-        Console.WriteLine("Panel blanked. Start the app again when you are done here.");
+        Console.WriteLine("Panel handed back to its firmware animation. Start the app when done.");
         Console.WriteLine();
 
         Report(got);

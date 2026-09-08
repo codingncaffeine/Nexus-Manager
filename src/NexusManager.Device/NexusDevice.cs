@@ -119,6 +119,38 @@ public sealed class NexusDevice : IDisposable
 
     public void StopAnimation() => SendCommand(0x0F);
 
+    /// <summary>
+    /// Leaves the panel the way it was found: playing the Corsair animation its
+    /// firmware runs when nothing is driving it.
+    ///
+    /// ⛔ Blanking on exit was ACTIVELY SUPPRESSING that. The device shows the
+    /// animation after a replug with no software at all, which is what Windows
+    /// users see when iCUE is not running — but start this app and close it and
+    /// the strip went black and stayed black, because shutdown sent `blank` and
+    /// then a backlight of zero. The user found it; nothing in the code said the
+    /// firmware had a state of its own to hand back to.
+    ///
+    /// Identified on hardware 2026-09-08: **1 is the Corsair idle animation**,
+    /// 2 is an equally good alternative, and 3 is a download arrow — almost
+    /// certainly the firmware-update indicator, so it is not an idle choice.
+    ///
+    /// ⛔ Brightness is raised BEFORE the animation and never to zero. Our own
+    /// shutdown used to end at zero, and an animation started against that plays
+    /// perfectly and is invisible, which reads as a dead command.
+    /// </summary>
+    /// <param name="animation">1-3, or anything else to blank instead.</param>
+    public void HandBack(int animation, int brightness)
+    {
+        if (animation is < 1 or > 3)
+        {
+            Blank();
+            SetBrightness(0);
+            return;
+        }
+        SetBrightness(Math.Clamp(brightness, 1, 100));
+        PlayAnimation(animation, loop: true);
+    }
+
     private void SendCommand(params byte[] args)
     {
         var report = new byte[32];

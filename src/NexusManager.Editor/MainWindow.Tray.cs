@@ -40,9 +40,10 @@ public sealed partial class MainWindow
                 _liveToDevice.IsChecked = _liveToDevice.IsChecked != true;
                 live.IsChecked = _liveToDevice.IsChecked == true;
                 // Turning output off should not leave the last frame frozen on
-                // the glass - blank it, so "off" looks off.
+                // the glass. Hand it back to the firmware animation, which is what
+                // "not being driven" actually looks like on this device.
                 if (_liveToDevice.IsChecked != true)
-                    try { _device?.Blank(); } catch (Exception) { }
+                    try { _device?.HandBack(_set.IdleAnimation, _set.Brightness); } catch (Exception) { }
             };
             menu.Add(live);
 

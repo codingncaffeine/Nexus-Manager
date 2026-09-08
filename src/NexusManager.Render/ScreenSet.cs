@@ -24,6 +24,16 @@ public sealed class ScreenSet
     /// 38% of the measured frame budget; the panel tops out near 65.</summary>
     public int TargetFps { get; set; } = 24;
 
+    /// <summary>
+    /// What the panel is left playing when the app stops: 1-3 selects a
+    /// firmware animation, 0 blanks the strip.
+    ///
+    /// Defaults to 1, the Corsair idle animation the device plays on its own
+    /// when no software is driving it. Blanking was the old behaviour and it
+    /// left a dead black strip on the keyboard after every exit.
+    /// </summary>
+    public int IdleAnimation { get; set; } = 1;
+
     /// <summary>How often sensors are read, in milliseconds. Deliberately far
     /// slower than the frame rate: reading sensors per frame cost 41 ms of a
     /// 41.7 ms budget, and nothing here changes meaningfully at 24 Hz.</summary>

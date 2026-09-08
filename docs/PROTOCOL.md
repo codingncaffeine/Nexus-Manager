@@ -27,6 +27,32 @@ Permissions: a udev rule tagging uaccess MUST sort before 73-seat-late.rules.
     03 0F                  stop animation
     03 10 01               seen at iCUE startup, purpose unknown
 
+### The three firmware animations — IDENTIFIED ON HARDWARE 2026-09-08
+
+Played with `nexus-manager anim <n> --loop` and looked at:
+
+    1   the Corsair idle animation — what the device shows on its own when no
+        host software is driving it, and what Windows users see when iCUE is
+        not running. THIS is the one to hand the panel back to on exit.
+    2   a second, equally presentable animation. A fine alternative.
+    3   a download arrow over the same background. Almost certainly the
+        firmware-update indicator, so NOT an idle choice.
+
+They live in firmware and keep playing after the host process exits, which is
+why an unplug/replug with nothing installed shows animation 1.
+
+⛔ **Blanking on exit actively suppressed this.** The device had a resting state
+of its own and nothing in our code knew it, so `blank` + brightness 0 left a
+dead black strip that persisted until a power cycle. `NexusDevice.HandBack`
+restores it instead. ⛔ Raise brightness BEFORE starting an animation: our own
+shutdown used to end at 0, and an animation played against that is invisible,
+which reads as a dead command rather than a dark backlight.
+
+⛔ No evidence of WRITABLE onboard storage. These three are baked in; the image
+path (output report 2) is a live push, not a store, and the 256-screen figure
+on Corsair's product page is iCUE-side storage. Reports 0x0C (=1) and 0x0D (=4)
+are still unexplained and are the only remaining candidates.
+
 ## Device info — READ from feature reports 4..0x0E
 
 All return 32 bytes. Byte 0 echoes the report ID. Byte 1 is a length for the
