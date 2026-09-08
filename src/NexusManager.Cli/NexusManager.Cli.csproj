@@ -5,6 +5,7 @@
     <RootNamespace>NexusManager.Cli</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../NexusManager.Audio/NexusManager.Audio.csproj" />
     <ProjectReference Include="../NexusManager.Render/NexusManager.Render.csproj" />
     <ProjectReference Include="..\NexusManager.Sensors\NexusManager.Sensors.csproj" />
   </ItemGroup>

@@ -549,6 +549,33 @@ switch (cmd)
         break;
     }
 
+    case "visualizer":
+    case "vis":
+    {
+        if (args.Contains("--selftest"))
+        {
+            // ⛔ return, NOT Environment.ExitCode. Top-level statements with an
+            // explicit `return 0` at the end of the file compile to Task<int>
+            // Main, and that final return OVERWRITES ExitCode - so a self-test
+            // that printed FAILED still exited 0 and no script could tell.
+            return Visualizer.SelfTest();
+        }
+        if (args.Contains("--probe"))
+        {
+            return await Visualizer.ProbeAsync(Visualizer.ParseInt(args, "--seconds", 6));
+        }
+
+        using var cvis = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cvis.Cancel(); };
+        return await Visualizer.RunAsync(
+            Visualizer.ParseInt(args, "--seconds", 20),
+            Visualizer.ParseInt(args, "--fps", 30),
+            Visualizer.ParseInt(args, "--bands", 32),
+            Visualizer.ParseMode(args),
+            Visualizer.ParseInt(args, "--cycle", 8),
+            cvis.Token);
+    }
+
     default:
         Console.WriteLine("""
             nexus-manager <command>
@@ -566,6 +593,10 @@ switch (cmd)
               anim <1-3> [--loop] play a firmware animation (anim stop to end it)
               preview [--screen N] render a screen to a PNG, no device needed
               key <combo>         send a synthetic keypress (ctrl+alt+t)
+              visualizer          music spectrum on the panel
+                --selftest        validate the DSP on synthetic signal, no hardware
+                --probe           what the audio capture is actually seeing
+                --seconds N --fps N --bands N
 
               -f / --fahrenheit   show temperatures in Fahrenheit
             """);

@@ -5,6 +5,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../NexusManager.Actions/NexusManager.Actions.csproj" />
+    <ProjectReference Include="../NexusManager.Audio/NexusManager.Audio.csproj" />
     <ProjectReference Include="../NexusManager.Device/NexusManager.Device.csproj" />
     <ProjectReference Include="..\NexusManager.Sensors\NexusManager.Sensors.csproj" />
   </ItemGroup>
