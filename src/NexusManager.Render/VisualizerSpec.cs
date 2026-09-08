@@ -38,16 +38,16 @@ public enum VisualizerKind
     ReactiveBackground = 13,
     BeatPulse = 14,
 
-    // --- Winamp heritage ---
-    /// <summary>The main-window analyser: bars under a fixed vertical
-    /// green-yellow-red ramp anchored to the CELL, with pale falling caps.</summary>
-    WinampSpectrum = 15,
+    // --- Classic player analysers ---
+    /// <summary>The analyser of the classic skinnable players: bars under a fixed
+    /// vertical green-yellow-red ramp anchored to the CELL, with pale falling caps.</summary>
+    ClassicSpectrum = 15,
 
-    /// <summary>The main-window scope: a connected trace, each column coloured
+    /// <summary>Their oscilloscope: a connected trace, each column coloured
     /// by its own amplitude.</summary>
-    WinampScope = 16,
+    ClassicScope = 16,
 
-    /// <summary>MilkDrop in miniature: a feedback buffer zoomed and faded every
+    /// <summary>Iterated feedback: the previous frame zoomed, rotated and faded every
     /// frame with the waveform drawn into it.</summary>
     Feedback = 17,
 
@@ -63,23 +63,23 @@ public enum VisualizerKind
     /// <summary>Sine-field plasma, hue-cycled on the beat.</summary>
     Plasma = 21,
 
-    // --- Windows Media Player heritage ---
-    /// <summary>WMP's "Bars": SOLID bars under DETACHED white caps. Distinct
-    /// from <see cref="WinampSpectrum"/>, which ramps colour with height -
-    /// checked against a WMP 11 screenshot, whose bars are one flat green.</summary>
-    WmpBars = 22,
+    // --- Flat-bar analysers ---
+    /// <summary>SOLID one-colour bars under DETACHED white caps. Distinct
+    /// from <see cref="ClassicSpectrum"/>, which ramps colour with height -
+    /// checked against a reference capture, whose bars are one flat green.</summary>
+    EmeraldBars = 22,
 
-    /// <summary>WMP's unused "Dot Scope" preset: the oscilloscope drawn as
+    /// <summary>The oscilloscope drawn as
     /// unconnected dots rather than a trace.</summary>
     DotScope = 23,
 
-    /// <summary>WMP's "Particle" lineage: a fountain thrown by band energy.</summary>
+    /// <summary>A particle fountain thrown by band energy.</summary>
     Particles = 24,
 
-    /// <summary>WMP's "Ambience" lineage: a slow flowing colour field.</summary>
+    /// <summary>A slow flowing colour field.</summary>
     Ambience = 25,
 
-    /// <summary>The "Battery" lineage: the spectrum folded and mirrored into a
+    /// <summary>The spectrum folded and mirrored into a
     /// symmetric figure.</summary>
     Kaleidoscope = 26,
 
@@ -112,9 +112,9 @@ public enum VisualizerKind
 /// <summary>
 /// How a visualizer cell is coloured.
 ///
-/// The named schemes come from Windows Media Player, where "Bars", "Ocean Mist"
-/// and "Fire Storm" are the SAME analyser under different colours. Palettes
-/// rather than duplicate modes, for the same reason.
+/// The named schemes follow a long-standing convention in media players, where
+/// several listed "visualizations" are the SAME analyser under different
+/// colours. Palettes rather than duplicate modes, for the same reason.
 /// </summary>
 public enum VisualizerPalette
 {
@@ -129,16 +129,16 @@ public enum VisualizerPalette
     /// <summary>The screen theme's value colour.</summary>
     Theme = 2,
 
-    /// <summary>Cool blues and cyan, after WMP's "Ocean Mist".</summary>
-    OceanMist = 3,
+    /// <summary>Cool blues into cyan, nothing warm.</summary>
+    Ocean = 3,
 
-    /// <summary>Reds through orange to yellow, after WMP's "Fire Storm".</summary>
-    FireStorm = 4,
+    /// <summary>Reds through orange to yellow.</summary>
+    Ember = 4,
 
     /// <summary>Green through yellow to red by HEIGHT, the meter convention.</summary>
     Meter = 5,
 
-    /// <summary>Flat green, as WMP's own "Bars" draws it.</summary>
+    /// <summary>Flat green, one colour for every band.</summary>
     Emerald = 6,
 }
 
@@ -163,8 +163,8 @@ public sealed class VisualizerSpec
 
     /// <summary>
     /// Peak cap colour. WHITE by default and independent of the bar colour,
-    /// because that is what the meters this imitates actually did: WMP's own
-    /// analyser is flat green bars under clearly detached white caps. Tinting
+    /// because that is what the meters this imitates actually did: a reference
+    /// capture shows flat green bars under clearly detached white caps. Tinting
     /// the cap to match the bar makes it read as part of the bar instead.
     /// </summary>
     public string PeakColor { get; set; } = "#E8E8F0";

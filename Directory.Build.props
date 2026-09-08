@@ -9,5 +9,9 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <AnalysisLevel>latest</AnalysisLevel>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- Single source of truth for the shipped version. packaging/build-release.sh
+         reads VersionPrefix out of this file, so the tag, the .deb metadata, the
+         tarball name and the PKGBUILD cannot drift apart from the binaries. -->
+    <VersionPrefix>0.0.3</VersionPrefix>
   </PropertyGroup>
 </Project>

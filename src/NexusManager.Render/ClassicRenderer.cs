@@ -4,7 +4,7 @@ using SkiaSharp;
 namespace NexusManager.Render;
 
 /// <summary>
-/// The Winamp-heritage modes.
+/// The classic-player analyser modes.
 ///
 /// Kept out of <see cref="VisualizerRenderer"/> because these carry real state -
 /// a feedback buffer, a fire grid, a cached gradient - while the spectrum modes
@@ -17,18 +17,18 @@ namespace NexusManager.Render;
 /// app - it touches every pixel of the cell every frame - so nothing in its path
 /// may allocate.
 /// </summary>
-public sealed class WinampRenderer : IDisposable
+public sealed class ClassicRenderer : IDisposable
 {
     private readonly SKPaint _fill = new() { IsAntialias = false, Style = SKPaintStyle.Fill };
     private readonly SKPaint _blit = new() { IsAntialias = false };
     private static readonly SKSamplingOptions Linear = new(SKFilterMode.Linear, SKMipmapMode.None);
     private static readonly SKSamplingOptions Nearest = new(SKFilterMode.Nearest, SKMipmapMode.None);
 
-    /// <summary>Winamp's vertical ramp, rebuilt only when the cell resizes.</summary>
+    /// <summary>The vertical ramp, rebuilt only when the cell resizes.</summary>
     private SKShader? _ramp;
     private SKRect _rampRect;
 
-    // Feedback (MilkDrop in miniature).
+    // Iterated feedback.
     private SKBitmap? _fb, _fbBack;
     private SKCanvas? _fbCanvas, _fbBackCanvas;
     private float _fbAngle;
@@ -51,7 +51,7 @@ public sealed class WinampRenderer : IDisposable
     // ------------------------------------------------------------ spectrum --
 
     /// <summary>
-    /// The main-window analyser. What makes it read as Winamp rather than as a
+    /// The classic player analyser. What makes it read as that rather than as a
     /// generic bar chart is that the colour ramp is anchored to the CELL, not to
     /// each bar: every bar shares one green-at-the-bottom to red-at-the-top
     /// gradient, so a tall bar goes red at its tip while a short one stays green
@@ -139,10 +139,10 @@ public sealed class WinampRenderer : IDisposable
     // ------------------------------------------------------------ feedback --
 
     /// <summary>
-    /// MilkDrop's actual mechanic, at 640x48: keep the last frame, redraw it
+    /// Iterated feedback at 640x48: keep the last frame, redraw it
     /// slightly zoomed and rotated with its brightness decayed, then draw this
-    /// frame's waveform into it. Everything that looks like a "preset" in
-    /// MilkDrop is a choice of warp and decay on top of exactly this loop.
+    /// frame's waveform into it. Everything that looks like a distinct "preset" in
+    /// this family of effects is a choice of warp and decay over exactly this loop.
     ///
     /// On a strip the zoom reads as a horizontal tunnel rather than the square
     /// vortex it makes on a desktop, which suits the panel better than it has
@@ -177,8 +177,8 @@ public sealed class WinampRenderer : IDisposable
         // Decay by drawing the previous frame back dimmed. A translucent BLACK
         // wash instead would only ever approach black: on an 18-bit panel it
         // stalls on the low bits and leaves permanent ghosts.
-        // ⛔ NOT a clear to black. Checked against a MilkDrop capture: its
-        // signature is SATURATED COMPLEMENTARY colour - hot pink against
+        // ⛔ NOT a clear to black. Checked against a reference capture: the
+        // signature of this look is SATURATED COMPLEMENTARY colour - hot pink against
         // cyan - not ink on a dark field. Decaying towards black gives a
         // muddy grey smear with none of that character, and on an 18-bit
         // panel the last steps of the fade stall on the low bits anyway.

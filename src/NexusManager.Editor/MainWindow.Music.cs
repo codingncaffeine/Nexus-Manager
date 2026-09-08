@@ -40,8 +40,8 @@ public sealed partial class MainWindow
         VisualizerKind.SegmentedVu => "Segmented bars",
         VisualizerKind.VuMeters => "VU meters",
         VisualizerKind.Spectrogram => "Spectrogram",
-        VisualizerKind.WinampSpectrum => "Winamp analyser",
-        VisualizerKind.WinampScope => "Winamp scope",
+        VisualizerKind.ClassicSpectrum => "Classic analyser",
+        VisualizerKind.ClassicScope => "Classic scope",
         VisualizerKind.Feedback => "Feedback tunnel",
         VisualizerKind.Fire => "Fire",
         VisualizerKind.GradientBars => "Gradient bars",
@@ -57,7 +57,7 @@ public sealed partial class MainWindow
         VisualizerKind.Superscope => "Superscope",
         VisualizerKind.Starfield => "Starfield",
         VisualizerKind.Plasma => "Plasma",
-        VisualizerKind.WmpBars => "WMP analyser",
+        VisualizerKind.EmeraldBars => "Emerald bars",
         VisualizerKind.DotScope => "Dot scope",
         VisualizerKind.Particles => "Particles",
         VisualizerKind.Ambience => "Ambience",
@@ -160,7 +160,7 @@ public sealed partial class MainWindow
             ItemsSource = new[]
             {
                 "Frequency ramp", "Single colour", "Theme colour",
-                "Ocean Mist", "Fire Storm", "Meter", "Emerald",
+                "Ocean", "Ember", "Meter", "Emerald",
             },
             SelectedIndex = (int)m.Palette,
             FontSize = 12,

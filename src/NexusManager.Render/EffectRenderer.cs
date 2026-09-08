@@ -126,7 +126,7 @@ public sealed class EffectRenderer : IDisposable
     // ------------------------------------------------------------ ambience --
 
     /// <summary>
-    /// WMP's "Ambience" lineage: slow drifting colour, no hard edges. Distinct
+    /// Slow drifting colour, no hard edges. Distinct
     /// from <see cref="Plasma"/> by being layered horizontal flow rather than an
     /// interference field, and by taking its colour from the SPECTRUM - the hue
     /// at a column follows the band that sits over it, so the picture is a soft
@@ -247,7 +247,7 @@ public sealed class EffectRenderer : IDisposable
     // ----------------------------------------------------------- particles --
 
     /// <summary>
-    /// WMP's "Particle" lineage: a fountain thrown from the floor, each emitter
+    /// A fountain thrown from the floor, each emitter
     /// fed by the band above it, under gravity.
     /// </summary>
     public void Particles(SKCanvas canvas, SKRect rect, AudioFrame frame, float dt)
@@ -416,7 +416,7 @@ public sealed class EffectRenderer : IDisposable
     // -------------------------------------------------------- kaleidoscope --
 
     /// <summary>
-    /// The "Battery" lineage: the spectrum folded into a figure with two axes of
+    /// The spectrum folded into a figure with two axes of
     /// symmetry. Four-fold symmetry is what a 13.3:1 strip can actually carry -
     /// a true radial kaleidoscope needs height this panel does not have.
     /// </summary>

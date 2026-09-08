@@ -1,3 +1,5 @@
+![Nexus Manager](docs/banner.jpg)
+
 # Nexus Manager
 
 A sensor display for the Corsair iCUE NEXUS on Linux.
@@ -18,11 +20,18 @@ Not affiliated with or endorsed by Corsair.
 - Multiple screens, changed by swiping the panel
 - Celsius, Fahrenheit or Kelvin
 - A GUI editor with a live preview that pushes to the panel as you edit
+- **Music visualizers** — 32 modes driven by the audio your machine is
+  playing: spectrum bars, oscilloscopes, VU meters, a spectrogram, a stereo
+  goniometer, and effect modes from fire and plasma to metaballs and a
+  feedback tunnel, all with named colour palettes
 
 ## Requirements
 
 - .NET 10
 - A udev rule granting access to the device
+- PipeWire or PulseAudio, for the music visualizers only. They capture the
+  default output's monitor through `parec`, so `pulseaudio-utils` (or
+  `pipewire-pulse`) must be present. Everything else works without it.
 
 ## Install the udev rule
 
@@ -76,3 +85,7 @@ slower without them:
 - [fhuber83/ICueNexusPlusPlus](https://github.com/fhuber83/ICueNexusPlusPlus)
 - [bitfocus/companion-module-icue-nexus](https://github.com/bitfocus/companion-module-icue-nexus)
 - [aluferraz/inexus-osx](https://github.com/aluferraz/inexus-osx)
+
+## Licence
+
+GPL-3.0-or-later. See [`LICENSE`](LICENSE).

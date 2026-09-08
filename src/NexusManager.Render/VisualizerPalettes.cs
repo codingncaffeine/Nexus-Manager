@@ -28,17 +28,17 @@ public static class VisualizerPalettes
                 // cannot loop back to red and read as bass.
                 VisualizerPalette.Frequency => SKColor.FromHsl(200f * t, 85f, 55f),
 
-                // WMP's "Ocean Mist": deep blue into cyan, nothing warm.
-                VisualizerPalette.OceanMist => Lerp(
+                // Deep blue into cyan, nothing warm.
+                VisualizerPalette.Ocean => Lerp(
                     new SKColor(0x10, 0x3C, 0xA0), new SKColor(0x50, 0xE0, 0xE8), t),
 
-                // WMP's "Fire Storm": red through orange to yellow.
-                VisualizerPalette.FireStorm => t < 0.5f
+                // Red through orange to yellow.
+                VisualizerPalette.Ember => t < 0.5f
                     ? Lerp(new SKColor(0xB0, 0x10, 0x08), new SKColor(0xF0, 0x70, 0x00), t * 2f)
                     : Lerp(new SKColor(0xF0, 0x70, 0x00), new SKColor(0xFF, 0xE0, 0x30), (t - 0.5f) * 2f),
 
-                // Flat green, as WMP's own "Bars" draws it - checked against a
-                // WMP 11 screenshot, where every bar is one colour and only the
+                // Flat green - checked against a reference capture, where every
+                // bar is one colour and only the
                 // caps differ.
                 VisualizerPalette.Emerald => new SKColor(0x3C, 0xD8, 0x3C),
 

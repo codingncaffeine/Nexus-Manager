@@ -152,10 +152,10 @@ public static class Autostart
 /// </summary>
 public sealed class MusicSettings
 {
-    /// <summary>Defaults to the Winamp analyser: it is the one every listener
+    /// <summary>Defaults to the classic analyser: it is the one every listener
     /// already recognises, so a first run looks like something rather than like
     /// a configuration screen.</summary>
-    public VisualizerKind Kind { get; set; } = VisualizerKind.WinampSpectrum;
+    public VisualizerKind Kind { get; set; } = VisualizerKind.ClassicSpectrum;
 
     public int BandCount { get; set; } = 32;
     public int Gap { get; set; } = 1;

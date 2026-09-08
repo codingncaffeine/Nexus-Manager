@@ -82,9 +82,9 @@ public sealed class WaveformRenderer : IDisposable
     }
 
     /// <summary>
-    /// WMP shipped a "Dot Scope" preset for Bars and Waves that was never
-    /// enabled: the scope drawn as unconnected dots. It suits this panel better
-    /// than it suited a desktop window - at 48px a connected trace at speed is
+    /// A scope drawn as unconnected dots. Media players have shipped this as a
+    /// preset for decades, and it suits this panel better
+    /// than it suits a desktop window - at 48px a connected trace at speed is
     /// nearly solid, while dots keep the shape legible.
     /// </summary>
     public void DotScope(SKCanvas canvas, SKRect rect, AudioFrame frame, SKColor color, int step = 3)

@@ -31,11 +31,11 @@ public sealed class VisualizerRenderer : IDisposable
     private int _gramCol;
     private long _gramSeq = -1;
 
-    private WinampRenderer? _winamp;
+    private ClassicRenderer? _classic;
     private WaveformRenderer? _wave;
     private EffectRenderer? _effects;
 
-    private WinampRenderer Winamp => _winamp ??= new WinampRenderer();
+    private ClassicRenderer Classic => _classic ??= new ClassicRenderer();
     private WaveformRenderer Wave => _wave ??= new WaveformRenderer();
     private EffectRenderer Effects => _effects ??= new EffectRenderer();
 
@@ -64,14 +64,14 @@ public sealed class VisualizerRenderer : IDisposable
         VisualizerKind.Spectrogram,
         VisualizerKind.ReactiveBackground,
         VisualizerKind.BeatPulse,
-        VisualizerKind.WinampSpectrum,
-        VisualizerKind.WinampScope,
+        VisualizerKind.ClassicSpectrum,
+        VisualizerKind.ClassicScope,
         VisualizerKind.Feedback,
         VisualizerKind.Fire,
         VisualizerKind.Superscope,
         VisualizerKind.Starfield,
         VisualizerKind.Plasma,
-        VisualizerKind.WmpBars,
+        VisualizerKind.EmeraldBars,
         VisualizerKind.DotScope,
         VisualizerKind.Particles,
         VisualizerKind.Ambience,
@@ -108,10 +108,10 @@ public sealed class VisualizerRenderer : IDisposable
             case VisualizerKind.LevelBar: DrawLevelBar(canvas, spec, rect, frame, theme); break;
             case VisualizerKind.Spectrogram: DrawSpectrogram(canvas, rect, frame, theme); break;
 
-            // WMP's own analyser: flat bars, detached white caps. Forced to the
+            // Flat one-colour bars, detached white caps. Forced to the
             // Emerald palette because that IS the preset - it is not a colour
             // choice the user made, it is what the mode is.
-            case VisualizerKind.WmpBars: DrawBars(canvas, spec, rect, frame, theme,
+            case VisualizerKind.EmeraldBars: DrawBars(canvas, spec, rect, frame, theme,
                                                   mirrored: false, force: VisualizerPalette.Emerald); break;
 
             case VisualizerKind.Oscilloscope: Wave.Oscilloscope(canvas, rect, frame, tint); break;
@@ -120,10 +120,10 @@ public sealed class VisualizerRenderer : IDisposable
             case VisualizerKind.DotScope: Wave.DotScope(canvas, rect, frame, tint); break;
             case VisualizerKind.Vectorscope: Wave.Vectorscope(canvas, rect, frame, tint); break;
 
-            case VisualizerKind.WinampSpectrum: Winamp.Spectrum(canvas, spec, rect, frame); break;
-            case VisualizerKind.WinampScope: Winamp.Scope(canvas, rect, frame); break;
-            case VisualizerKind.Feedback: Effects.Advance(dt, frame); Winamp.Feedback(canvas, rect, frame); break;
-            case VisualizerKind.Fire: Winamp.Fire(canvas, rect, frame); break;
+            case VisualizerKind.ClassicSpectrum: Classic.Spectrum(canvas, spec, rect, frame); break;
+            case VisualizerKind.ClassicScope: Classic.Scope(canvas, rect, frame); break;
+            case VisualizerKind.Feedback: Effects.Advance(dt, frame); Classic.Feedback(canvas, rect, frame); break;
+            case VisualizerKind.Fire: Classic.Fire(canvas, rect, frame); break;
 
             case VisualizerKind.Superscope: Effects.Advance(dt, frame); Effects.Superscope(canvas, rect, frame, tint); break;
             case VisualizerKind.Starfield: Effects.Advance(dt, frame); Effects.Starfield(canvas, rect, frame, dt); break;
@@ -676,7 +676,7 @@ public sealed class VisualizerRenderer : IDisposable
         _base.Dispose();
         _blit.Dispose();
         _gram?.Dispose();
-        _winamp?.Dispose();
+        _classic?.Dispose();
         _wave?.Dispose();
         _effects?.Dispose();
     }

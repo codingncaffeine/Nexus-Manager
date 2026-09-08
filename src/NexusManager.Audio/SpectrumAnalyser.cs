@@ -201,7 +201,7 @@ public sealed class SpectrumAnalyser
             // that merely decays looks like a second bar. A cap that HOLDS, lets
             // go, accelerates, and lands on the bar reads as a physical object
             // sitting on top of the level - which is the effect every hi-fi
-            // meter and every Winamp skin was after.
+            // meter and every skinnable player was after.
             //
             // ⛔ Gravity is applied in NORMALISED DISPLAY UNITS, not decibels.
             // A constant fall in dB is not a constant fall in pixels, and an
