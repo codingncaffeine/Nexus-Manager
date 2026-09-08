@@ -35,7 +35,7 @@ optdepends=('libpulse: music visualizers (provides parec)'
 options=('!strip')   # self-contained .NET bundle - stripping breaks it
 install=nexus-manager-bin.install
 source=("$url/releases/download/v$pkgver/nexus-manager-$pkgver-linux-x64.tar.gz")
-sha256sums=('8192b1c28bd8f20e50b8f21b43e2a2e6e141ca581535a3d31b4dfcf145bcc84e')
+sha256sums=('003bce47c7f96bd422d27ece494395f2e6435fcb7e09b4aa46280f34cbf6a7cb')
 
 package() {
     install -dm755 "$pkgdir/usr/lib/nexus-manager" "$pkgdir/usr/bin" \
