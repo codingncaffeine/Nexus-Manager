@@ -7,7 +7,24 @@ namespace NexusManager.Editor;
 /// sensors have been removed from it.</summary>
 public sealed class GroupState
 {
-    public int Columns { get; set; } = 2;
+    /// <summary>
+    /// Tiles per row. ⛔ CLAMPED IN THE SETTER, which is what System.Text.Json
+    /// calls, so a hand-edited or corrupted dashboard.json cannot carry a
+    /// hostile value into the layout.
+    ///
+    /// A negative value is not a theoretical concern: the group card is sized
+    /// as Columns * 202 + 24, so -3 asks Avalonia for a width of -582, which
+    /// throws ArgumentException during the first layout pass and leaves the
+    /// editor hung at startup rather than merely failing. Zero is milder but
+    /// still wrong - it divides by zero in the height estimate and yields
+    /// infinity.
+    /// </summary>
+    private int _columns = 2;
+    public int Columns
+    {
+        get => _columns;
+        set => _columns = Math.Clamp(value, 1, 12);
+    }
     public bool HideGraphs { get; set; }
     public bool Hidden { get; set; }
     public HashSet<string> HiddenSensors { get; set; } = new(StringComparer.Ordinal);
