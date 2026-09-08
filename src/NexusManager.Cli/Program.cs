@@ -137,6 +137,47 @@ switch (cmd)
         break;
     }
 
+    case "import":
+    {
+        string? pack = args.Length > 1 && !args[1].StartsWith('-') ? args[1] : null;
+        if (pack is null || !File.Exists(pack))
+        {
+            Console.Error.WriteLine("usage: nexus-manager import <pack.cuescreens> [--write]");
+            return 2;
+        }
+
+        string bgDir = System.IO.Path.Combine(
+            System.IO.Path.GetDirectoryName(Config.Path)!, "backgrounds");
+        var imported = CueScreensImport.Load(pack, bgDir);
+
+        foreach (string w in imported.Warnings) Console.WriteLine($"  ! {w}");
+        if (!imported.Ok)
+        {
+            Console.Error.WriteLine($"  import failed: {imported.Error}");
+            return 1;
+        }
+
+        Console.WriteLine();
+        foreach (var s in imported.Screens)
+            Console.WriteLine($"  screen '{s.Name}': {s.Buttons.Count} button(s), "
+                + (s.Background.HasImage ? "background" : "no background"));
+
+        if (!args.Contains("--write"))
+        {
+            Console.WriteLine();
+            Console.WriteLine("  Nothing written. Re-run with --write to add these to your config.");
+            Console.WriteLine("  ⛔ Imported buttons can carry macros, which type into whatever");
+            Console.WriteLine("     window has focus. Read the list above before you do.");
+            return 0;
+        }
+
+        var existing = await Config.LoadAsync(null) ?? new ScreenSet();
+        existing.Screens.AddRange(imported.Screens);
+        await Config.SaveAsync(existing, null);
+        Console.WriteLine($"  added {imported.Screens.Count} screen(s) to {Config.Path}");
+        break;
+    }
+
     case "macro":
     {
         // Runs a macro from a JSON file, with no panel involved. The backlog
@@ -665,6 +706,7 @@ switch (cmd)
               preview [--screen N] render a screen to a PNG, no device needed
               key <combo>         send a synthetic keypress (ctrl+alt+t)
               macro <file.json>   run a macro from a file, without the panel
+              import <pack>       read a .cuescreens pack (--write to keep it)
               visualizer          music spectrum on the panel
                 --selftest        validate the DSP on synthetic signal, no hardware
                 --probe           what the audio capture is actually seeing
