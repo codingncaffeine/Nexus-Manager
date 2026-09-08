@@ -44,13 +44,20 @@ public sealed class PanelPreview : Border
     /// <summary>A button was clicked, by button index.</summary>
     public event Action<int>? ButtonSelected;
 
-    public PanelPreview(int scale = 2, bool interactive = false)
+    /// <summary>Largest factor this preview will use. The fitted factor is
+    /// chosen per layout pass and is never larger than this.</summary>
+    private readonly int _maxScale;
+    private int _scale;
+
+    public PanelPreview(int scale = 3, bool interactive = false)
     {
+        _maxScale = Math.Max(1, scale);
+        _scale = 1;
         _image = new Image
         {
             Source = _bitmap,
-            Width = NexusCanvas.Width * scale,
-            Height = NexusCanvas.Height * scale,
+            Width = NexusCanvas.Width,
+            Height = NexusCanvas.Height,
             Stretch = Stretch.Fill,
         };
         // Nearest-neighbour: the panel has hard pixels, so the preview should too.
@@ -68,18 +75,66 @@ public sealed class PanelPreview : Border
         _overlay.Selected += i => Selected?.Invoke(i);
         _overlay.ButtonSelected += i => ButtonSelected?.Invoke(i);
 
-        // A Viewbox, not a fixed size. At 2x the preview is 1280px wide inside a
-        // ~900px card, so it overflowed by 188px on each side - the overlay was
-        // arranged at X = -188 and the pointer never landed on it. DownOnly caps
-        // it at the requested scale and shrinks it when the window is narrower.
+        // Kept only as a safety net for a window narrower than the panel's own
+        // 640px, where no whole multiple fits and something has to give. Above
+        // that width MeasureOverride has already sized the image to a whole
+        // multiple that fits, so this never scales anything - which is the
+        // point, because a Viewbox scaling by a fraction is what made the
+        // preview ragged in the first place.
         Child = new Viewbox
         {
             Stretch = Stretch.Uniform,
             StretchDirection = StretchDirection.DownOnly,
             Child = new Grid { Children = { _image, _overlay } },
         };
-        BorderBrush = Brushes.DimGray;
-        BorderThickness = new Thickness(1);
+        // ⛔ NO BORDER. iCUE draws none on any surface - a vertical scan across
+        // a tile edge steps #1F1F1F straight to #0D0D0D through one antialiased
+        // pixel, so the fill contrast IS the edge. This had DimGray, a colour
+        // that appears nowhere in the measured palette.
+    }
+
+    /// <summary>The integer factor the preview is currently drawn at.</summary>
+    public int Scale => _scale;
+
+    /// <summary>Raised when the fitted scale changes, so a caption can say what
+    /// the viewer is looking at.</summary>
+    public event Action<int>? ScaleChanged;
+
+    /// <summary>
+    /// ⛔ INTEGER SCALES ONLY, and this is the whole point of the override.
+    ///
+    /// The preview looked ragged rather than blurry, and interpolation was
+    /// never the cause: it is already nearest-neighbour with aliased edges. The
+    /// Image was 640 -> 1280 (2x), and then a Viewbox scaled the composed
+    /// visual down to fit the card - about 0.82 in a 1111px window. Sampling
+    /// therefore landed at ~1.64x: some source pixels became two device pixels
+    /// and the ones beside them became one. On 10-21px text that is uneven
+    /// stroke weights and dropped rows.
+    ///
+    /// Nearest-neighbour is only honest at whole multiples, so pick the largest
+    /// whole multiple that fits and never a fraction. This is what emulators,
+    /// LED-matrix editors and watch-face studios do, for exactly this reason.
+    /// </summary>
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        if (!double.IsInfinity(availableSize.Width) && availableSize.Width >= NexusCanvas.Width)
+        {
+            int want = Math.Clamp((int)(availableSize.Width / NexusCanvas.Width), 1, _maxScale);
+            if (want != _scale)
+            {
+                _scale = want;
+                _image.Width  = NexusCanvas.Width  * _scale;
+                _image.Height = NexusCanvas.Height * _scale;
+                _overlay.Width  = _image.Width;
+                _overlay.Height = _image.Height;
+                // Posted, not raised inline: a handler that writes to a caption
+                // triggers layout, and raising that from inside a measure pass
+                // is how a re-entrant layout loop starts.
+                int at = _scale;
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => ScaleChanged?.Invoke(at));
+            }
+        }
+        return base.MeasureOverride(availableSize);
     }
 
     /// <summary>Latest frame, ready to hand to the device.</summary>

@@ -104,6 +104,10 @@ public sealed partial class MainWindow
         } finally { _building = false; }
     }
 
+    /// <summary>Show every installed family, bypassing FontCatalog. Survives a
+    /// panel rebuild because it is a field, not a control state.</summary>
+    private bool _showAllFonts;
+
     private void RefreshThemePanel()
     {
         _building = true;
@@ -115,16 +119,25 @@ public sealed partial class MainWindow
         _themeProps.Children.Add(Row("Name", Text(Screen.Name, v => { Screen.Name = v; RefreshScreenList(); })));
 
         _themeProps.Children.Add(Head("Type"));
+        // 1911 families are installed here and 1873 of them are Noto script
+        // variants, so the unfiltered list was a picker nobody could use.
+        // FontCatalog filters by rule; the toggle is what keeps that safe,
+        // since a rule that is right on this machine can be wrong elsewhere and
+        // there would otherwise be no way to reach a font it hides.
         var fonts = new ComboBox
         {
-            ItemsSource = SkiaSharp.SKFontManager.Default.GetFontFamilies().OrderBy(f => f).ToList(),
+            ItemsSource = _showAllFonts ? FontCatalog.All() : FontCatalog.Usable(t.FontFamily),
             SelectedItem = t.FontFamily,
         };
         fonts.SelectionChanged += (_, _) =>
         {
-            if (fonts.SelectedItem is string f) { t.FontFamily = f; Changed(); }
+            // ⛔ This handler was the only one in the panel without the guard.
+            if (_building || fonts.SelectedItem is not string f) return;
+            t.FontFamily = f; Changed();
         };
         _themeProps.Children.Add(Row("Font", fonts));
+        _themeProps.Children.Add(Check("Show all fonts", _showAllFonts,
+            v => { _showAllFonts = v; FontCatalog.Refresh(); RefreshThemePanel(); }));
         _themeProps.Children.Add(Row("Label size", Num(t.CaptionSize, v => { t.CaptionSize = (float)v; Changed(); })));
         _themeProps.Children.Add(Row("Value size", Num(t.ValueSize, v => { t.ValueSize = (float)v; Changed(); })));
         _themeProps.Children.Add(Check("Bold labels", t.CaptionBold, v => { t.CaptionBold = v; Changed(); }));
@@ -256,8 +269,8 @@ public sealed partial class MainWindow
         Building(() =>
         {
             int keep = _moduleList.SelectedIndex;
-            _moduleList.ItemsSource = Screen.Modules
-                .Select((m, i) => $"{i + 1}. {(string.IsNullOrEmpty(m.Label) ? m.Source : m.Label)}").ToList();
+            ApplyModuleListTemplate();
+            _moduleList.ItemsSource = ModuleRows();
             _moduleList.SelectedIndex = keep;
         });
     }

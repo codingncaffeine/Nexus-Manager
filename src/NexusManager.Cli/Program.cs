@@ -364,6 +364,34 @@ switch (cmd)
         break;
     }
 
+    case "fonts":
+    {
+        // Shows exactly what the font picker will offer, and what it dropped.
+        // A filter nobody can see the output of is a filter nobody can check.
+        var everything = FontCatalog.All();
+        var offered = FontCatalog.Usable();
+        bool showAll = args.Contains("--all");
+        Console.WriteLine($"{everything.Count} families installed, {offered.Count} offered "
+                          + $"({everything.Count - offered.Count} filtered out)");
+        Console.WriteLine();
+        foreach (string f in offered)
+        {
+            using var probe = SkiaSharp.SKTypeface.FromFamilyName(f);
+            string got = probe?.FamilyName ?? "(null)";
+            bool exact = string.Equals(got, f, StringComparison.OrdinalIgnoreCase);
+            Console.WriteLine($"  {f,-28} -> {got}{(exact ? "" : "   *** FALLBACK, not the requested family ***")}");
+        }
+        if (showAll)
+        {
+            Console.WriteLine();
+            Console.WriteLine("dropped:");
+            var keep = new HashSet<string>(offered, StringComparer.OrdinalIgnoreCase);
+            foreach (string f in everything.Where(f => !keep.Contains(f)))
+                Console.WriteLine($"  {f}");
+        }
+        break;
+    }
+
     case "calibrate":
     {
         // Does a tap land where it looks like it lands? Measured rather than
@@ -478,6 +506,7 @@ switch (cmd)
               bench [seconds]     raw frame upload rate
               touch               live gesture stream
               calibrate           tap known targets to measure touch alignment
+              fonts [--all]       font families the picker offers (--all lists the dropped)
               image <file>        inspect a background image or animation
               blank               clear the panel and turn its backlight off
               preview [--screen N] render a screen to a PNG, no device needed

@@ -2,6 +2,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
+using Avalonia.Controls.Presenters;
+using Avalonia.Styling;
 using Avalonia.Layout;
 using Avalonia.Media;
 using NexusManager.Render;
@@ -22,19 +24,13 @@ public sealed partial class MainWindow
         // ---- top bar ------------------------------------------------------
         var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 0, 0, 12) };
 
-        var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center };
-        brand.Children.Add(new Border
-        {
-            Width = 8, Height = 8, CornerRadius = new CornerRadius(4),
-            Background = Style.AccentBrush, VerticalAlignment = VerticalAlignment.Center,
-        });
-        brand.Children.Add(new TextBlock
-        {
-            Text = "NEXUS MANAGER", Foreground = Style.TextBrush,
-            FontSize = 13, FontWeight = FontWeight.SemiBold, LetterSpacing = 1.2,
-            VerticalAlignment = VerticalAlignment.Center,
-        });
-        Grid.SetColumn(brand, 0); bar.Children.Add(brand);
+        // ⛔ No brand row here. This used to draw an accent dot plus
+        // "NEXUS MANAGER" at the top of the page body. iCUE never repeats the
+        // application name inside a page - the top bar owns identity - and in
+        // the reference the accent appears exactly twice in the whole window,
+        // on the selected profile and on nothing else. Spending it on a
+        // decorative dot is what made this tab read as a different program.
+        // Removing it also gives the row back to a preview that wants width.
 
         _screenList.Height = 30;
         _screenList.Background = Brushes.Transparent;
@@ -91,17 +87,25 @@ public sealed partial class MainWindow
             RefreshThemePanel();
         };
 
+        var previewHint = new TextBlock
+        {
+            Foreground = Style.TextDimBrush, FontSize = 11,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        // The factor is reported rather than asserted: it is chosen from the
+        // width actually available, so a fixed "shown at 2x" caption would be
+        // wrong at most window sizes.
+        void SayScale(int s) => previewHint.Text =
+            $"640 × 48, shown at {s}× · hover to see cell boundaries, drag one to resize · "
+            + "a cell turns red below its minimum width";
+        SayScale(_preview.Scale);
+        _preview.ScaleChanged += SayScale;
+
         var previewInner = new StackPanel { Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center };
         previewInner.Children.Add(_preview);
-        previewInner.Children.Add(new TextBlock
-        {
-            Text = "Hover the panel to see cell boundaries; drag one to resize. "
-                 + "A cell turns red below its minimum width.",
-            Foreground = Style.TextDimBrush, FontSize = 10,
-            HorizontalAlignment = HorizontalAlignment.Center,
-        });
+        previewInner.Children.Add(previewHint);
 
-        var previewCard = Style.CardPanel("Panel", "640 × 48, shown at 2×", previewInner);
+        var previewCard = Style.CardPanel("Panel", "the strip, exactly as the hardware draws it", previewInner);
         previewCard.Margin = new Thickness(0, 0, 0, 12);
         Grid.SetRow(previewCard, 1); root.Children.Add(previewCard);
 
@@ -195,22 +199,122 @@ public sealed partial class MainWindow
         return b;
     }
 
+    /// <summary>
+    /// Styles the screen tabs like the shell's own nav, which is styled like
+    /// iCUE's: plain text, dim when inactive, white when active, no pill and no
+    /// underline. In the reference the only filled selection in the whole
+    /// window is the profile tile in the rail, and it is an accent OUTLINE
+    /// rather than a fill - so a default ListBox row, which paints a solid
+    /// highlight behind the selected item, reads as a different application.
+    ///
+    /// The container theme is applied once: it is a control theme, not content,
+    /// so rebuilding the list must not re-add it.
+    /// </summary>
+    private void ApplyScreenTabTheme()
+    {
+        if (_screenTabsThemed) return;
+        _screenTabsThemed = true;
+
+        var theme = new ControlTheme(typeof(ListBoxItem))
+        {
+            Setters =
+            {
+                new Setter(TemplatedControl.BackgroundProperty, Brushes.Transparent),
+                new Setter(TemplatedControl.ForegroundProperty, Style.TextDimBrush),
+                new Setter(TemplatedControl.BorderThicknessProperty, new Thickness(0)),
+                new Setter(TemplatedControl.CornerRadiusProperty, new CornerRadius(0)),
+                new Setter(TemplatedControl.PaddingProperty, new Thickness(12, 6, 12, 6)),
+                new Setter(TemplatedControl.FontSizeProperty, 13.0),
+            },
+        };
+        // The Fluent ListBoxItem paints its highlight on the ContentPresenter
+        // inside its template, so clearing the item's own Background is not
+        // enough - the selected and hovered fills have to be cleared there.
+        foreach (string state in new[] { ":selected", ":pointerover", ":selected:pointerover" })
+        {
+            var s = new Avalonia.Styling.Style(x => x.Nesting().Class(state).Template().OfType<ContentPresenter>());
+            s.Setters.Add(new Setter(ContentPresenter.BackgroundProperty, Brushes.Transparent));
+            theme.Add(s);
+        }
+        var selected = new Avalonia.Styling.Style(x => x.Nesting().Class(":selected"));
+        selected.Setters.Add(new Setter(TemplatedControl.ForegroundProperty, Style.TextBrush));
+        theme.Add(selected);
+
+        _screenList.ItemContainerTheme = theme;
+    }
+    private bool _screenTabsThemed;
+
     private void RefreshScreenList()
     {
         Building(() =>
         {
+            ApplyScreenTabTheme();
             _screenList.ItemsSource = _set.Screens.Select(s => s.Name).ToList();
             _screenList.SelectedIndex = _screenIndex;
         });
     }
 
+    /// <summary>One row of the screen's readout list.</summary>
+    private sealed record ModuleRow(string Text, Avalonia.Media.Color Tint, SensorKind Kind);
+
+    /// <summary>
+    /// Built in one place because two callers refresh this list, and when they
+    /// disagreed about the item type the template silently rendered the
+    /// record's ToString().
+    /// </summary>
+    private List<ModuleRow> ModuleRows() =>
+        Screen.Modules.Select((m, i) => new ModuleRow(
+            $"{i + 1}. {(string.IsNullOrEmpty(m.Label) ? m.Source : m.Label)}",
+            Avalonia.Media.Color.Parse(SensorPalette.DefaultColor(m.Kind)),
+            m.Kind)).ToList();
+
+    /// <summary>
+    /// iCUE colour-codes a sensor by KIND and applies it to the icon, the value
+    /// and the chart together - temperature amber, load green, fan blue, volts
+    /// purple. It is the strongest single signal that a window belongs to that
+    /// application, and SensorPalette already holds those exact colours, so
+    /// adopting it costs no new colour decisions.
+    ///
+    /// The same IconGlyph the Home view's tiles use, so the two views speak one
+    /// visual language instead of two.
+    /// </summary>
+    private void ApplyModuleListTemplate()
+    {
+        if (_moduleTemplated) return;
+        _moduleTemplated = true;
+        _moduleList.ItemTemplate = new FuncDataTemplate<ModuleRow>((row, _) =>
+        {
+            // ⛔ A RECYCLING TEMPLATE IS HANDED A NULL ITEM while containers
+            // are reused, so this must tolerate one. Dereferencing it crashed
+            // the app on sight - after every self-test check had already
+            // reported PASS, because the checks build views without ever
+            // rendering a list item.
+            if (row is null) return new TextBlock();
+            var sp = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 8,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            var icon = IconGlyph.For(row.Kind, row.Tint);
+            icon.Width = 13; icon.Height = 13;
+            icon.VerticalAlignment = VerticalAlignment.Center;
+            sp.Children.Add(icon);
+            sp.Children.Add(new TextBlock
+            {
+                Text = row.Text, Foreground = Style.TextBrush,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            return sp;
+        }, true);
+    }
+    private bool _moduleTemplated;
+
     private void RefreshModuleList()
     {
         Building(() =>
         {
-            _moduleList.ItemsSource = Screen.Modules
-                .Select((m, i) => $"{i + 1}. {(string.IsNullOrEmpty(m.Label) ? m.Source : m.Label)}")
-                .ToList();
+            ApplyModuleListTemplate();
+            _moduleList.ItemsSource = ModuleRows();
             _moduleList.SelectedIndex = Math.Clamp(_moduleIndex, 0, Math.Max(0, Screen.Modules.Count - 1));
         });
         RefreshModuleProps();
@@ -229,9 +333,26 @@ public sealed partial class MainWindow
         var g = new Grid { ColumnDefinitions = new ColumnDefinitions("90,*") };
         var l = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.Gray };
         Grid.SetColumn(l, 0); g.Children.Add(l);
+        // ⛔ The editor column is a star, so a field used to stretch all the way
+        // to the right edge of the window - a box holding "24" ran for hundreds
+        // of pixels. iCUE sizes a control to the value it holds; a full-width
+        // box reads as a bar, not as a value. Anything that has not asked for
+        // its own width gets a cap here, so one rule covers every field rather
+        // than each one having to remember.
+        if (double.IsNaN(editor.Width) && double.IsPositiveInfinity(editor.MaxWidth))
+            editor.MaxWidth = FieldWidth;
         Grid.SetColumn(editor, 1); g.Children.Add(editor);
         return g;
     }
+
+    /// <summary>Widest a property field grows. Long enough for a screen name or
+    /// a shell command, short enough that a row still reads as a value.</summary>
+    private const double FieldWidth = 240;
+
+    /// <summary>Number fields are narrower again: every value the editor takes -
+    /// a weight, a percentage, a temperature bound - fits inside this, so
+    /// matching the text fields' width would only add whitespace.</summary>
+    private const double NumberWidth = 80;
 
     private TextBox Text(string? value, Action<string> set)
     {
@@ -242,7 +363,11 @@ public sealed partial class MainWindow
 
     private Control Num(double value, Action<double> set)
     {
-        var tb = new TextBox { Text = value.ToString(System.Globalization.CultureInfo.InvariantCulture) };
+        var tb = new TextBox
+        {
+            Text = value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Width = NumberWidth,
+        };
         tb.TextChanged += (_, _) =>
         {
             if (_building) return;

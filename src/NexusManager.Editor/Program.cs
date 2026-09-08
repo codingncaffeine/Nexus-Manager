@@ -46,11 +46,20 @@ internal static class Program
                 // Launching again is how people ask for the window back, so treat
                 // it as exactly that rather than as an error.
                 if (!App.SelfTest && !App.ProbeDrag && !App.ProbeAction && SingleInstance.Signal("show"))
+                {
                     Console.Error.WriteLine(
                         "Nexus Manager is already running - bringing its window to the front.");
-                else
-                    Console.Error.WriteLine(
-                        $"Nexus Manager is already running as {holder}. Stop it first.");
+                    return;      // the intent was satisfied, so this is success
+                }
+                Console.Error.WriteLine(
+                    $"Nexus Manager is already running as {holder}. Stop it first.");
+                // ⛔ A diagnostic that never RAN must not report success. Main
+                // returns void, so this path used to exit 0 - meaning
+                // `--selftest` launched while the app was open printed one line
+                // and handed back a clean exit, indistinguishable from a full
+                // pass. That is the same defect as the exit code `timeout` was
+                // supplying, in a different place.
+                Environment.Exit(App.SelfTest || App.ProbeDrag || App.ProbeAction ? 2 : 1);
                 return;
             }
 

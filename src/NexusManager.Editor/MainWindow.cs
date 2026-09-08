@@ -23,7 +23,7 @@ public sealed partial class MainWindow : Window
     private readonly NexusCanvas _canvas = new();
     /// <summary>The preview IS the layout editor: cells are resized by dragging
     /// on it directly, rather than on a second bar drawing the same thing.
-    private readonly PanelPreview _preview = new(scale: 2, interactive: true);
+    private readonly PanelPreview _preview = new(scale: 3, interactive: true);
     private readonly DashboardLayout _dashLayout = DashboardLayout.Load();
     private readonly AppSettings _settings = AppSettings.Load();
     /// <summary>Created once the registry exists, so it can resolve keys.</summary>

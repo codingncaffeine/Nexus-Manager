@@ -82,6 +82,7 @@ public sealed partial class MainWindow
                 failures++;
                 Console.Out.WriteLine($"[selftest] taps       FAILED: x=100 -> {leftHit} (want 0), "
                                       + $"x=500 -> {rightHit} (want 1)");
+
             }
             else Console.Out.WriteLine("[selftest] taps       OK");
 
@@ -149,6 +150,41 @@ public sealed partial class MainWindow
             }
         }
         if (failures == 0) Console.Out.WriteLine("[selftest] revisits  OK");
+
+        // ⛔ A LIST TEMPLATE MUST TOLERATE A NULL ITEM. Avalonia hands a
+        // recycling template `null` while it reuses containers, and a template
+        // that dereferenced it crashed the application the moment the Panel tab
+        // was looked at - AFTER this self test had printed PASS, because
+        // building a view never renders a single list item. A check that blesses
+        // a build which dies on sight is worse than no check.
+        try
+        {
+            ApplyModuleListTemplate();
+            var tmpl = _moduleList.ItemTemplate;
+            if (tmpl is null)
+            {
+                failures++;
+                Console.Out.WriteLine("[selftest] itemtemplate FAILED: no template on the module list");
+            }
+            else
+            {
+                tmpl.Build(null);                       // the recycling case
+                var real = tmpl.Build(new ModuleRow(
+                    "1. probe", Avalonia.Media.Colors.White,
+                    NexusManager.Sensors.SensorKind.Temperature));
+                if (real is null)
+                {
+                    failures++;
+                    Console.Out.WriteLine("[selftest] itemtemplate FAILED: built nothing for a real row");
+                }
+                else Console.Out.WriteLine("[selftest] itemtemplate OK");
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.Out.WriteLine($"[selftest] itemtemplate FAILED: {ex.GetType().Name}: {ex.Message}");
+        }
 
         Console.Out.WriteLine(failures == 0
             ? "[selftest] PASS"
