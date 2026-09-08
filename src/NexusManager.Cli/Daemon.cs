@@ -20,6 +20,7 @@ public sealed class Daemon : IDisposable
 
     private readonly List<List<ModuleLayout>> _layouts = [];
     private readonly List<List<ButtonLayout>> _buttonLayouts = [];
+    private readonly List<List<VisualizerLayout>> _visualLayouts = [];
     private readonly List<List<History>> _histories = [];
     private readonly List<ScreenRenderer> _renderers = [];
 
@@ -34,6 +35,11 @@ public sealed class Daemon : IDisposable
     private TimeSpan _flashUntil;
     /// <summary>Render-loop clock, so the press flash expires on wall time.</summary>
     private TimeSpan _clock;
+
+    /// <summary>Opened ONLY when a screen actually carries a visualizer.
+    /// A sensor-only configuration must not spawn a capture process, and
+    /// most configurations are sensor-only.</summary>
+    private NexusManager.Audio.AudioCapture? _audio;
 
     public Daemon(NexusDevice dev, SensorRegistry reg, ScreenSet set)
     {
@@ -56,8 +62,9 @@ public sealed class Daemon : IDisposable
 
         foreach (var screen in set.Screens)
         {
-            var (layout, buttons) = ScreenLayout.ComputeAll(screen, out var narrow);
+            var (layout, buttons, visuals) = ScreenLayout.ComputeAll(screen, out var narrow);
             _buttonLayouts.Add(buttons);
+            _visualLayouts.Add(visuals);
             foreach (string w in narrow) Console.Error.WriteLine($"  warning: {screen.Name}: {w}");
             _layouts.Add(layout);
             _renderers.Add(new ScreenRenderer(screen.Theme));
@@ -68,6 +75,17 @@ public sealed class Daemon : IDisposable
         // Every screen's sensors are sampled, not just the visible one, so a
         // screen you swipe back to shows continuous history rather than a gap.
         _reg.SetActive(set.Screens.SelectMany(s => s.Modules).Select(m => m.Source).Distinct());
+
+        if (set.Screens.Any(s => s.NeedsAudio))
+        {
+            // Band count follows the widest visualizer on any screen, so a
+            // 64-band cell is not fed a 32-band analysis.
+            int bands = set.Screens.SelectMany(s => s.Visualizers)
+                                   .Select(v => v.EffectiveBands).DefaultIfEmpty(32).Max();
+            _audio = new NexusManager.Audio.AudioCapture(
+                new NexusManager.Audio.AnalyserOptions { BandCount = bands });
+            _audio.Start();
+        }
     }
 
     public async Task RunAsync(CancellationToken ct)
@@ -118,7 +136,9 @@ public sealed class Daemon : IDisposable
                 _renderers[cur].Draw(canvas, _layouts[cur], _histories[cur],
                     k => { double v = _reg.Read(k); return double.IsNaN(v) ? 0 : v; },
                     _set.Screens[cur].Background, sw.Elapsed,
-                    _buttonLayouts[cur], _pressedButton, _flashUntil);
+                    _buttonLayouts[cur], _pressedButton, _flashUntil,
+                    _visualLayouts[cur], _audio?.Current,
+                    (float)period.TotalSeconds);
                 _clock = sw.Elapsed;
 
                 if (_set.ShowPageIndicator)
@@ -224,5 +244,6 @@ public sealed class Daemon : IDisposable
     public void Dispose()
     {
         foreach (var r in _renderers) r.Dispose();
+        _audio?.Dispose();
     }
 }

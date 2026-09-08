@@ -74,7 +74,7 @@ public sealed partial class MainWindow
             var twoButtons = new NexusManager.Render.ScreenSpec();
             twoButtons.Buttons.Add(new NexusManager.Render.ButtonSpec { Label = "L" });
             twoButtons.Buttons.Add(new NexusManager.Render.ButtonSpec { Label = "R" });
-            var (_, btnLayout) = NexusManager.Render.ScreenLayout.ComputeAll(twoButtons, out _);
+            var (_, btnLayout, _) = NexusManager.Render.ScreenLayout.ComputeAll(twoButtons, out _);
             int leftHit = NexusManager.Render.ScreenLayout.HitTest(btnLayout, 100);
             int rightHit = NexusManager.Render.ScreenLayout.HitTest(btnLayout, 500);
             if (leftHit != 0 || rightHit != 1)

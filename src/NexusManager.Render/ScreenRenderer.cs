@@ -35,6 +35,13 @@ public sealed class ScreenRenderer : IDisposable
     private readonly BackgroundPainter _background = new();
     private readonly ButtonRenderer _buttons;
 
+    /// <summary>One renderer per visualizer CELL, not one shared. The
+    /// spectrogram and the feedback modes keep their own history, so two
+    /// visualizers on one screen sharing a renderer would scroll each other's
+    /// buffers. Created lazily and only as many as a screen actually has.
+    /// </summary>
+    private readonly List<VisualizerRenderer> _visuals = [];
+
     public ScreenRenderer(Theme theme)
     {
         _theme   = theme;
@@ -59,12 +66,30 @@ public sealed class ScreenRenderer : IDisposable
         TimeSpan elapsed = default,
         IReadOnlyList<ButtonLayout>? buttons = null,
         int pressedButton = -1,
-        TimeSpan flashUntil = default)
+        TimeSpan flashUntil = default,
+        // Appended rather than inserted: every caller passes pressedButton and
+        // flashUntil positionally, and slotting new parameters ahead of them
+        // silently rebinds those arguments to the wrong slots.
+        IReadOnlyList<VisualizerLayout>? visualizers = null,
+        NexusManager.Audio.AudioFrame? audio = null,
+        float audioDt = 1f / 30f)
     {
         // Background first: colour, still image, or a running animation. The
         // elapsed time is wall-clock, so a GIF plays at ITS rate rather than
         // being tied to whatever the panel frame rate is set to.
         _background.Draw(canvas.Canvas, background, _theme.BackgroundColor, elapsed);
+
+        // Visualizers before readouts: they are backgrounds in spirit, and a
+        // full-cell effect drawn after a sensor value would paint over it.
+        if (visualizers is { Count: > 0 } && audio is not null)
+        {
+            while (_visuals.Count < visualizers.Count) _visuals.Add(new VisualizerRenderer());
+            for (int v = 0; v < visualizers.Count; v++)
+            {
+                var (vspec, vrect, _) = visualizers[v];
+                _visuals[v].Draw(canvas.Canvas, vspec, vrect, audio, _theme, audioDt);
+            }
+        }
 
         for (int i = 0; i < layout.Count; i++)
         {
@@ -251,6 +276,7 @@ public sealed class ScreenRenderer : IDisposable
         _label.Dispose(); _device.Dispose(); _value.Dispose(); _valueCompact.Dispose();
         _unit.Dispose(); _minmax.Dispose();
         _text.Dispose(); _flat.Dispose(); _face.Dispose(); _faceVal.Dispose();
+        foreach (var v in _visuals) v.Dispose();
         _buttons.Dispose();
         _background.Dispose();
     }

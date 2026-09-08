@@ -73,6 +73,11 @@ public sealed partial class MainWindow : Window
     // Safe to reuse because _pushBusy prevents a second push overlapping.
     private readonly byte[] _pushBuffer = new byte[NexusDevice.FrameBytes];
 
+    /// <summary>Capture for visualizer cells on the PANEL screens, separate
+    /// from the Music Visualizer tab's own. Opened only while a screen that
+    /// wants audio is being rendered, and released as soon as none is.</summary>
+    private NexusManager.Audio.AudioCapture? _panelAudio;
+
     private readonly ListBox _screenList = new();
     private readonly ListBox _moduleList = new();
     private readonly StackPanel _moduleProps = new() { Spacing = 4 };
@@ -264,6 +269,10 @@ public sealed partial class MainWindow : Window
         _device?.Dispose();
         // Remove the tray icon explicitly: leaving it to finalisation can leave
         // a dead entry in the tray after the process is gone.
+        // Released before the device: it owns a subprocess, and leaving one
+        // behind after the window has gone is worse than a slow shutdown.
+        _panelAudio?.Dispose();
+        _panelAudio = null;
         try { _tray?.Dispose(); } catch (Exception) { }
         _tray = null;
         _logger?.Dispose();
@@ -302,7 +311,7 @@ public sealed partial class MainWindow : Window
             _rendererSig = sig;
         }
 
-        var (layout, buttonLayout) = ScreenLayout.ComputeAll(Screen, out var narrow);
+        var (layout, buttonLayout, visualLayout) = ScreenLayout.ComputeAll(Screen, out var narrow);
         _buttonLayout = buttonLayout;
         _histories = layout.Select(l => new History(Math.Max(2, (int)l.Rect.Width))).ToList();
 
@@ -320,6 +329,7 @@ public sealed partial class MainWindow : Window
         if (!_ready || _renderer is null || _reg is null) return;
 
         MaintainDevice();
+        MaintainPanelAudio();
 
         // The visualizer owns the frame when its tab is up. It renders its
         // own canvas and shares the push path below, but must NOT fall
@@ -334,7 +344,7 @@ public sealed partial class MainWindow : Window
 
         _reg.Sample();
 
-        var (layout, buttonLayout) = ScreenLayout.ComputeAll(Screen, out _);
+        var (layout, buttonLayout, visualLayout) = ScreenLayout.ComputeAll(Screen, out _);
         _buttonLayout = buttonLayout;
         while (_histories.Count < layout.Count) _histories.Add(new History(160));
 
@@ -347,7 +357,12 @@ public sealed partial class MainWindow : Window
         _renderer!.Draw(_canvas, layout, _histories,
             k => { double v = _reg.Read(k); return double.IsNaN(v) ? 0 : v; },
             Screen.Background, _clock.Elapsed,
-            buttonLayout, _pressedButton, _flashUntil);
+            buttonLayout, _pressedButton, _flashUntil,
+            // D18: any capability the headless daemon has, the tray app must
+            // have too. The daemon renders visualizer cells; without this the
+            // same screen would draw them from the service and not from the
+            // editor, which is exactly how swipe was lost once before.
+            visualLayout, _panelAudio?.Current, (float)_timer.Interval.TotalSeconds);
         if (_set.ShowPageIndicator)
             PageIndicator.Draw(_canvas.Canvas, _screenIndex, _set.Screens.Count, Screen.Theme.CaptionColor);
 
@@ -376,6 +391,29 @@ public sealed partial class MainWindow : Window
     /// reconnect handling cannot exist in only one of them - which is how
     /// swipe was lost once already.
     /// </summary>
+    /// <summary>
+    /// Opens a capture when the screen being rendered carries a visualizer, and
+    /// closes it when none does. A sensor-only configuration - which is most of
+    /// them - must never hold a parec process open.
+    /// </summary>
+    private void MaintainPanelAudio()
+    {
+        bool wanted = _ready && Screen.NeedsAudio;
+        if (wanted && _panelAudio is null)
+        {
+            int bands = Screen.Visualizers.Select(v => v.EffectiveBands)
+                                          .DefaultIfEmpty(32).Max();
+            _panelAudio = new NexusManager.Audio.AudioCapture(
+                new NexusManager.Audio.AnalyserOptions { BandCount = bands });
+            _panelAudio.Start();
+        }
+        else if (!wanted && _panelAudio is not null)
+        {
+            _panelAudio.Dispose();
+            _panelAudio = null;
+        }
+    }
+
     private void PushToPanel(byte[]? source)
     {
         if (source is null) return;

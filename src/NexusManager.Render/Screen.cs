@@ -96,6 +96,17 @@ public sealed class ScreenSpec
     /// <summary>Touch buttons on this screen. Share the strip with Modules.</summary>
     public List<ButtonSpec> Buttons { get; set; } = [];
 
+    /// <summary>Music visualizers on this screen. Share the strip's single
+    /// weight budget with Modules and Buttons, so a screen with three readouts
+    /// and one visualizer gives the visualizer a quarter, not a half.
+    ///
+    /// A screen carrying one of these makes the renderer want audio, which is
+    /// what tells the daemon and the editor to open a capture at all - nothing
+    /// spawns parec unless a screen actually asks for it.</summary>
+    public List<VisualizerSpec> Visualizers { get; set; } = [];
+
+    [JsonIgnore] public bool NeedsAudio => Visualizers.Count > 0;
+
     /// <summary>
     /// Narrowest module that stays readable. A 3-digit value with decimals at the
     /// default type size needs roughly this much before the number collides with
@@ -131,6 +142,8 @@ public sealed class ScreenSpec
 
 public readonly record struct ModuleLayout(ModuleSpec Spec, SKRect Rect, int Index);
 
+public readonly record struct VisualizerLayout(VisualizerSpec Spec, SKRect Rect, int Index);
+
 public static class ScreenLayout
 {
     /// <summary>Distributes the strip across modules in proportion to their weights.</summary>
@@ -143,14 +156,16 @@ public static class ScreenLayout
     /// each: a screen with four readouts and one button should give the button
     /// a fifth, not a half.
     /// </summary>
-    public static (List<ModuleLayout> Modules, List<ButtonLayout> Buttons) ComputeAll(
+    public static (List<ModuleLayout> Modules, List<ButtonLayout> Buttons,
+                  List<VisualizerLayout> Visualizers) ComputeAll(
         ScreenSpec screen, out List<string> tooNarrow)
     {
         tooNarrow = [];
         var modules = new List<ModuleLayout>();
         var buttons = new List<ButtonLayout>();
-        int cells = screen.Modules.Count + screen.Buttons.Count;
-        if (cells == 0) return (modules, buttons);
+        var visuals = new List<VisualizerLayout>();
+        int cells = screen.Modules.Count + screen.Buttons.Count + screen.Visualizers.Count;
+        if (cells == 0) return (modules, buttons, visuals);
 
         // Lead and trail are part of the same budget, so cells keep their
         // proportions as the surrounding space grows.
@@ -158,8 +173,9 @@ public static class ScreenLayout
         double trail = Math.Max(0, screen.TrailWeight);
         double total = lead + trail
                      + screen.Modules.Sum(m => Math.Max(0.0001, m.Weight))
-                     + screen.Buttons.Sum(b => Math.Max(0.0001, b.Weight));
-        if (total <= 0) return (modules, buttons);
+                     + screen.Buttons.Sum(b => Math.Max(0.0001, b.Weight))
+                     + screen.Visualizers.Sum(v => Math.Max(0.0001, v.Weight));
+        if (total <= 0) return (modules, buttons, visuals);
         // Cells start after the leading gap.
         float x = (float)(NexusCanvas.Width * lead / total);
         int placed = 0;
@@ -167,6 +183,15 @@ public static class ScreenLayout
         // otherwise it would swallow the gap it is supposed to leave.
         bool lastFills = trail <= 0;
 
+        // Visualizers first, so a screen reads left-to-right as spectacle then
+        // data. ⛔ Cells are still grouped BY TYPE rather than by an explicit
+        // order index, so a module cannot sit between two visualizers - the
+        // inherited limitation noted in D50, now one group wider.
+        foreach (var v in screen.Visualizers)
+        {
+            float w = Advance(ref x, v.Weight, total, lastFills && ++placed == cells);
+            visuals.Add(new VisualizerLayout(v, Cell(x, w), visuals.Count));
+        }
         foreach (var m in screen.Modules)
         {
             float w = Advance(ref x, m.Weight, total, lastFills && ++placed == cells);
@@ -179,7 +204,7 @@ public static class ScreenLayout
             buttons.Add(new ButtonLayout(b, Cell(x, w), buttons.Count));
             NarrowButton(tooNarrow, screen, w, string.IsNullOrEmpty(b.Label) ? "button" : b.Label);
         }
-        return (modules, buttons);
+        return (modules, buttons, visuals);
     }
 
     /// <summary>Advances the cursor and returns the cell width. The LAST cell

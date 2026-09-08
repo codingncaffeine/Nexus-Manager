@@ -200,7 +200,7 @@ switch (cmd)
         await Task.Delay(250);
         reg.Sample();
 
-        var (pmods, pbtns) = ScreenLayout.ComputeAll(pscreen, out var pnarrow);
+        var (pmods, pbtns, pvis) = ScreenLayout.ComputeAll(pscreen, out var pnarrow);
         foreach (string wmsg in pnarrow) Console.Error.WriteLine($"  warning: {wmsg}");
 
         using var pcanvas = new NexusCanvas();
@@ -245,7 +245,8 @@ switch (cmd)
             pdata.SaveTo(pfs);
         }
         Console.WriteLine($"screen {which} '{pscreen.Name}': " +
-                          $"{pmods.Count} module(s), {pbtns.Count} button(s) -> {outPath}");
+                          $"{pmods.Count} module(s), {pbtns.Count} button(s), " +
+                          $"{pvis.Count} visualizer(s) -> {outPath}");
         foreach (var b in pbtns)
             Console.WriteLine($"  button [{b.Rect.Left:0}-{b.Rect.Right:0}] " +
                               $"'{b.Spec.Label}' {b.Spec.Action}");
@@ -328,7 +329,12 @@ switch (cmd)
             Console.Error.WriteLine($"  touch unavailable ({ex.Message}); screens will not swipe.");
         }
 
-        Console.WriteLine($"{set.Screens.Count} screen(s) at {set.TargetFps} fps. Swipe to change. Ctrl-C to stop.");
+        {
+            int vis = set.Screens.Sum(s => s.Visualizers.Count);
+            Console.WriteLine($"{set.Screens.Count} screen(s) at {set.TargetFps} fps"
+                + (vis > 0 ? $", {vis} visualizer(s) - capturing audio" : "")
+                + ". Swipe to change. Ctrl-C to stop.");
+        }
         await daemon.RunAsync(cts.Token);
         touchStream?.Dispose();
 
