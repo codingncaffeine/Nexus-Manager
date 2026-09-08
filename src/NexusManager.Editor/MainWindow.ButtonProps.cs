@@ -31,6 +31,13 @@ public sealed partial class MainWindow
     /// </summary>
     private void BuildButtonSection()
     {
+        // ⛔ FIRST, not last. The button section returns early when a screen
+        // has no buttons - which is exactly what a music screen looks like -
+        // so anything appended after it is simply never emitted. Placed at the
+        // end, the whole visualizer editor was invisible on the screens most
+        // likely to want one, and the self-test caught it.
+        RefreshVisualizerSection();
+
         _themeProps.Children.Add(Head("Buttons"));
         _themeProps.Children.Add(Style.Note(
             "Buttons share the strip with the readouts above, by weight. "
@@ -176,6 +183,7 @@ public sealed partial class MainWindow
                     + "Sent through a virtual keyboard, which is the only way on Wayland."));
                 break;
         }
+
     }
 
     /// <summary>A dropdown over a fixed set of strings.</summary>

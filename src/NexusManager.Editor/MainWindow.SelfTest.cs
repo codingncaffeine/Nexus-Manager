@@ -233,6 +233,41 @@ public sealed partial class MainWindow
             Console.Out.WriteLine($"[selftest] chartrange FAILED: {ex.GetType().Name}: {ex.Message}");
         }
 
+        // ⛔ A visualizer cell has to be REACHABLE from the editor, not merely
+        // renderable. It shipped once with ScreenSpec.Visualizers wired all the
+        // way through the daemon and the editor, every self-test passing, and no
+        // control anywhere to add one - so from inside the application the
+        // feature did not exist. This asserts the route exists and survives a
+        // selected cell, which is the path that touches every property field.
+        try
+        {
+            int before = Screen.Visualizers.Count;
+            Screen.Visualizers.Add(new NexusManager.Render.VisualizerSpec());
+            _visIndex = Screen.Visualizers.Count - 1;
+            RefreshThemePanel();
+            _themeProps.Measure(new Avalonia.Size(400, 2000));
+
+            int listed = _visList.ItemsSource?.Cast<object>().Count() ?? 0;
+            bool ok = listed == Screen.Visualizers.Count && listed > before;
+
+            Screen.Visualizers.RemoveAt(Screen.Visualizers.Count - 1);
+            _visIndex = 0;
+            RefreshThemePanel();
+
+            if (!ok)
+            {
+                failures++;
+                Console.Out.WriteLine($"[selftest] visualizer FAILED: list showed {listed} "
+                                    + $"for {Screen.Visualizers.Count + 1} cell(s)");
+            }
+            else Console.Out.WriteLine("[selftest] visualizer OK");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.Out.WriteLine($"[selftest] visualizer FAILED: {ex.GetType().Name}: {ex.Message}");
+        }
+
         Console.Out.WriteLine(failures == 0
             ? "[selftest] PASS"
             : $"[selftest] FAIL ({failures})");
