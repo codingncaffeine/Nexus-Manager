@@ -32,6 +32,70 @@ public static class Visualizer
         int fails = 0;
         Console.WriteLine($"  DSP self-test: {o.FftSize}-point, {o.BandCount} bands, "
                         + $"{o.MinHz:F0}-{o.MaxHz:F0} Hz at {o.SampleRate} Hz");
+        // The falling peak cap. Three separate claims, each checked separately.
+        //
+        // ⛔ The first version of this test asserted the cap ends at zero, and it
+        // FAILED against correct code. The bar does not vanish when the signal
+        // stops - it decays at 15 dB/s - so after ~1.3 s it is still at 0.69 and
+        // the cap is correctly sitting ON it. The cap's floor is the BAR, not the
+        // bottom of the display, and once landed it rides the bar down at the
+        // bar's constant rate, which also ends the acceleration. Both "failures"
+        // were the instrument describing a display it had not thought through.
+        {
+            var a = new SpectrumAnalyser(o);
+            var loud = new float[o.FftSize];
+            var quiet = new float[o.FftSize];
+            for (int i = 0; i < loud.Length; i++)
+                loud[i] = MathF.Sin(2f * MathF.PI * 1000f * i / o.SampleRate);
+
+            float dt = (float)o.HopSize / o.SampleRate;
+            a.Process(loud, dt);
+            int band = ArgMax(a.Publish(quiet, 0, 0, 0, 0, 0f, TimeSpan.Zero).Bands);
+
+            var bars = new List<float>();
+            var caps = new List<float>();
+            for (int h = 0; h < 240; h++)          // ~5 s: long enough for the bar to reach the floor
+            {
+                a.Process(quiet, dt);
+                var f = a.Publish(quiet, 0, 0, 0, 0, -120f, TimeSpan.Zero);
+                bars.Add(f.Bands[band]);
+                caps.Add(f.Peaks[band]);
+            }
+
+            // 1. It HOLDS, detached, while the bar drops away beneath it.
+            int hold = 0;
+            while (hold < caps.Count && caps[hold] >= caps[0] - 0.001f) hold++;
+            float holdSeconds = hold * dt;
+            bool okHold = holdSeconds >= 0.25f && holdSeconds <= 0.75f;
+
+            // 2. It ACCELERATES while in free fall - strictly above the bar.
+            //    Each step must be larger than the one before it. That is the
+            //    whole difference between a falling object and a decaying value.
+            int accel = 0, steps = 0;
+            for (int i = hold + 1; i < caps.Count - 1; i++)
+            {
+                // BOTH endpoints must be in free fall. The step that ends in
+                // the landing is clamped to the bar, so its delta is short
+                // through no fault of the physics - measuring it reported
+                // 14/15 against a cap that was accelerating perfectly.
+                if (caps[i] <= bars[i] + 1e-4f) break;
+                if (caps[i + 1] <= bars[i + 1] + 1e-4f) break;
+                float d1 = caps[i - 1] - caps[i], d2 = caps[i] - caps[i + 1];
+                steps++;
+                if (d2 >= d1 - 1e-4f) accel++;
+            }
+            bool okAccel = steps >= 5 && accel == steps;
+
+            // 3. It LANDS ON THE BAR and stays there - not through it, not above it.
+            bool okLand = MathF.Abs(caps[^1] - bars[^1]) < 0.01f;
+
+            bool ok = okHold && okAccel && okLand;
+            if (!ok) fails++;
+            Console.WriteLine($"  {(ok ? "OK  " : "FAIL")}  peak cap -> holds {holdSeconds:F2}s"
+                            + $" (want 0.25-0.75), {accel}/{steps} free-fall steps accelerating,"
+                            + $" settles on bar (cap {caps[^1]:F3} vs bar {bars[^1]:F3})");
+        }
+
         Console.WriteLine();
 
         // Ratio between adjacent band centres. A tone must land in a band whose

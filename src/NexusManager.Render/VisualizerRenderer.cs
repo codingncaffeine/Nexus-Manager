@@ -129,10 +129,12 @@ public sealed class VisualizerRenderer : IDisposable
         }
         if (!spec.ShowPeaks || p < 2f) return;
 
+        // Cap colour is the spec's, not the band's - see VisualizerSpec.PeakColor.
+        _cap.Color = Theme.Parse(spec.PeakColor, SKColors.White);
+
         // The cap does most of the work at this size: 48px of height is 1.25 dB
         // per pixel, so the bar alone cannot show a transient the cap makes
         // obvious (D49).
-        _cap.Color = c.WithAlpha(255);
         canvas.DrawRect(x, MathF.Max(rect.Top, rect.Bottom - p - 1f), w, 1f, _cap);
     }
 
@@ -176,7 +178,7 @@ public sealed class VisualizerRenderer : IDisposable
                 SKColor c = f > 0.85f ? theme.HotColor
                           : f > 0.65f ? theme.WarnColor
                           : _colors[b];
-                _bar.Color = isPeak ? c.WithAlpha(160) : c;
+                _bar.Color = isPeak ? Theme.Parse(spec.PeakColor, SKColors.White) : c;
                 canvas.DrawRect(x, rect.Bottom - (s + 1) * segH, barW, segDraw, _bar);
             }
         }

@@ -315,6 +315,17 @@ public sealed partial class MainWindow : Window
 
         MaintainDevice();
 
+        // The visualizer owns the frame when its tab is up. It renders its
+        // own canvas and shares the push path below, but must NOT fall
+        // through the sensor sampling: this branch runs at 30 Hz and one
+        // full sensor sweep costs most of a frame budget by itself.
+        if (_view == "music")
+        {
+            RenderMusic();
+            PushToPanel(_musicPreview?.Frame);
+            return;
+        }
+
         _reg.Sample();
 
         var (layout, buttonLayout) = ScreenLayout.ComputeAll(Screen, out _);
@@ -350,6 +361,19 @@ public sealed partial class MainWindow : Window
             GC.WaitForPendingFinalizers();
         }
 
+        PushToPanel(_preview.Frame);
+    }
+
+    /// <summary>
+    /// Hands one composed frame to the panel, off the UI thread and never
+    /// queued twice. Shared by the screen editor and the visualizer so the
+    /// reconnect handling cannot exist in only one of them - which is how
+    /// swipe was lost once already.
+    /// </summary>
+    private void PushToPanel(byte[]? source)
+    {
+        if (source is null) return;
+
         // 121 HID writes cost ~15 ms. Off the UI thread, and never queued twice.
         if (_liveToDevice.IsChecked == true && _device is not null && !_pushBusy)
         {
@@ -357,7 +381,7 @@ public sealed partial class MainWindow : Window
             // guard above and the push below, on a different thread.
             var dev = _device;
             _pushBusy = true;
-            Array.Copy(_preview.Frame, _pushBuffer, NexusDevice.FrameBytes);
+            Array.Copy(source, _pushBuffer, NexusDevice.FrameBytes);
             _ = Task.Run(() =>
             {
                 try { dev.PushFrame(_pushBuffer); _pushFailures = 0; }

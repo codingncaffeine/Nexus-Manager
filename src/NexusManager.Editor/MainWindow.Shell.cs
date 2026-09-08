@@ -75,6 +75,7 @@ public sealed partial class MainWindow
         _nav.Children.Add(NavTab("Home", "home"));
         _nav.Children.Add(NavTab("Dashboard", "dashboard"));
         _nav.Children.Add(NavTab("Panel", "panel"));
+        _nav.Children.Add(NavTab("Music Visualizer", "music"));
         _nav.HorizontalAlignment = HorizontalAlignment.Left;
         Grid.SetColumn(_nav, 1); bar.Children.Add(_nav);
 
@@ -175,6 +176,7 @@ public sealed partial class MainWindow
 
     private void ShowView(string id)
     {
+        string previous = _view;
         _view = id;
         foreach (var child in _nav.Children)
         {
@@ -186,12 +188,23 @@ public sealed partial class MainWindow
             b.FontWeight = on ? FontWeight.SemiBold : FontWeight.Normal;
         }
 
+        // Release the capture subprocess and put the tick rate back BEFORE
+        // the not-ready early return, or leaving the visualizer while the
+        // app is still starting leaves parec running and the timer at 30 Hz.
+        if (previous == "music" && id != "music") StopMusic();
+
         if (!_ready) { _viewHost.Content = Waiting(); return; }
 
         switch (id)
         {
             case "home":
                 _viewHost.Content = EnsureHome();
+                break;
+            case "music":
+                // Built before started: if the view throws, the capture
+                // process is never spawned and the tick stays slow.
+                _viewHost.Content = EnsureMusic();
+                StartMusic();
                 break;
             case "dashboard":
                 _viewHost.Content = EnsureDashboard();

@@ -77,6 +77,14 @@ public sealed class VisualizerSpec
     /// perceived detail (D49).</summary>
     public bool ShowPeaks { get; set; } = true;
 
+    /// <summary>
+    /// Peak cap colour. WHITE by default and independent of the bar colour,
+    /// because that is what the meters this imitates actually did: the cap is
+    /// a separate physical object sitting on the level, and tinting it to
+    /// match the bar makes it read as part of the bar instead.
+    /// </summary>
+    public string PeakColor { get; set; } = "#E8E8F0";
+
     /// <summary>Base colour for <see cref="VisualizerPalette.Solid"/>.</summary>
     public string Color { get; set; } = "#3B9AE1";
 

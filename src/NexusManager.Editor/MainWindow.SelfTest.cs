@@ -21,7 +21,7 @@ public sealed partial class MainWindow
     {
         int failures = 0;
 
-        foreach (string id in new[] { "home", "dashboard", "panel" })
+        foreach (string id in new[] { "home", "dashboard", "panel", "music" })
         {
             try
             {
@@ -140,7 +140,7 @@ public sealed partial class MainWindow
 
         // Switching back and forth catches state that only breaks on re-entry -
         // a cached view being re-parented, a handler added twice.
-        foreach (string id in new[] { "dashboard", "panel", "home", "panel" })
+        foreach (string id in new[] { "dashboard", "panel", "home", "music", "panel", "music" })
         {
             try { ShowView(id); }
             catch (Exception ex)

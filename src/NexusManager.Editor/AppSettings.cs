@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using NexusManager.Render;
 using NexusManager.Sensors;
 
 namespace NexusManager.Editor;
@@ -35,6 +36,11 @@ public sealed class AppSettings
 
     public int Brightness { get; set; } = 100;
     public int TargetFps { get; set; } = 24;
+
+    /// <summary>Music visualizer preferences. Kept here rather than in
+    /// screens.json because the visualizer is not a screen: it has no
+    /// modules, no buttons and no layout to save.</summary>
+    public MusicSettings Music { get; set; } = new();
 
     public LogSettings Logging { get; set; } = new();
 
@@ -136,4 +142,34 @@ public static class Autostart
             Console.Error.WriteLine($"[autostart] {ex.Message}");
         }
     }
+}
+
+/// <summary>
+/// What the music visualizer draws. Separate from <see cref="ScreenSpec"/> on
+/// purpose: a visualizer has no modules, no buttons and no cell layout, so
+/// storing it as a screen would mean a screen whose every layout field is
+/// meaningless.
+/// </summary>
+public sealed class MusicSettings
+{
+    /// <summary>Defaults to the Winamp analyser: it is the one every listener
+    /// already recognises, so a first run looks like something rather than like
+    /// a configuration screen.</summary>
+    public VisualizerKind Kind { get; set; } = VisualizerKind.WinampSpectrum;
+
+    public int BandCount { get; set; } = 32;
+    public int Gap { get; set; } = 1;
+    public bool ShowPeaks { get; set; } = true;
+    public VisualizerPalette Palette { get; set; } = VisualizerPalette.Frequency;
+    public string Color { get; set; } = "#3B9AE1";
+
+    /// <summary>Cap colour, independent of the bars. White by default;
+    /// green bars under a red cap was the other classic combination.</summary>
+    public string PeakColor { get; set; } = "#E8E8F0";
+
+    /// <summary>Frame rate while the visualizer owns the panel. 30 rather than
+    /// the 24 the sensor screens use: audio transients read as chunky below
+    /// that, and per-mode timing showed 30.0 fps held exactly with the frame
+    /// budget half spent.</summary>
+    public int TargetFps { get; set; } = 30;
 }

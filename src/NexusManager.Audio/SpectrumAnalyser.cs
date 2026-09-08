@@ -30,8 +30,15 @@ public sealed class AnalyserOptions
     /// transients (D48).</summary>
     public float DecayDbPerSecond { get; set; } = 15f;
 
-    public float PeakHoldSeconds { get; set; } = 0.5f;
-    public float PeakFallDbPerSecond { get; set; } = 30f;
+    /// <summary>How long a cap hangs at a new high before it lets go. This
+    /// pause is what makes the cap read as a separate object rather than as
+    /// the top edge of the bar (D58).</summary>
+    public float PeakHoldSeconds { get; set; } = 0.4f;
+
+    /// <summary>Cap acceleration, in fractions of full scale per second
+    /// squared. At 3.0 a cap released from the top reaches the floor in
+    /// about 0.8 s, starting slowly and visibly gathering speed.</summary>
+    public float PeakGravity { get; set; } = 3.0f;
 
     /// <summary>Below this the display idles instead of twitching on the noise
     /// floor of a monitor source (D51).</summary>
@@ -66,8 +73,13 @@ public sealed class SpectrumAnalyser
     private readonly float[] _tiltDb;
 
     private readonly float[] _bandDb;
-    private readonly float[] _peakDb;
     private readonly float[] _peakHold;
+
+    /// <summary>Cap position and velocity in NORMALISED display units, not
+    /// decibels. See the note in Process: gravity is only convincing in the
+    /// space the cap is actually drawn in.</summary>
+    private readonly float[] _peakNorm;
+    private readonly float[] _peakVel;
 
     private long _sequence;
 
@@ -94,8 +106,9 @@ public sealed class SpectrumAnalyser
         _centres = new float[n];
         _tiltDb = new float[n];
         _bandDb = new float[n];
-        _peakDb = new float[n];
         _peakHold = new float[n];
+        _peakNorm = new float[n];
+        _peakVel = new float[n];
 
         float binHz = (float)_o.SampleRate / _o.FftSize;
         int maxBin = _o.FftSize / 2;
@@ -115,7 +128,6 @@ public sealed class SpectrumAnalyser
 
             _tiltDb[b] = _o.TiltDbPerOctave * MathF.Log2(_centres[b] / _o.TiltPivotHz);
             _bandDb[b] = _o.FloorDb;
-            _peakDb[b] = _o.FloorDb;
         }
 
         _lastDb = _o.FloorDb;
@@ -180,19 +192,41 @@ public sealed class SpectrumAnalyser
             _bandDb[b] = db > decayed ? db : decayed;
             if (_bandDb[b] < _o.FloorDb) _bandDb[b] = _o.FloorDb;
 
-            if (_bandDb[b] >= _peakDb[b])
+            // The falling cap, and the reason it is worth this much code: a cap
+            // that merely decays looks like a second bar. A cap that HOLDS, lets
+            // go, accelerates, and lands on the bar reads as a physical object
+            // sitting on top of the level - which is the effect every hi-fi
+            // meter and every Winamp skin was after.
+            //
+            // ⛔ Gravity is applied in NORMALISED DISPLAY UNITS, not decibels.
+            // A constant fall in dB is not a constant fall in pixels, and an
+            // ACCELERATING fall in dB is a different curve again on screen. The
+            // cap has to accelerate in the space it is drawn in or it does not
+            // read as falling at all.
+            float norm = Normalise(_bandDb[b]);
+            if (norm >= _peakNorm[b])
             {
-                _peakDb[b] = _bandDb[b];
+                // Bar has caught or passed the cap: the cap rides on top, at
+                // rest. This is also the collision case - a cap falling onto a
+                // rising bar stops dead on it rather than sinking through.
+                _peakNorm[b] = norm;
+                _peakVel[b] = 0f;
                 _peakHold[b] = _o.PeakHoldSeconds;
             }
             else if (_peakHold[b] > 0f)
             {
+                // Detached and hanging. The bar has dropped away beneath it.
                 _peakHold[b] -= dt;
             }
             else
             {
-                _peakDb[b] -= _o.PeakFallDbPerSecond * dt;
-                if (_peakDb[b] < _bandDb[b]) _peakDb[b] = _bandDb[b];
+                _peakVel[b] += _o.PeakGravity * dt;
+                _peakNorm[b] -= _peakVel[b] * dt;
+                if (_peakNorm[b] <= norm)
+                {
+                    _peakNorm[b] = norm;
+                    _peakVel[b] = 0f;
+                }
             }
         }
     }
@@ -210,7 +244,7 @@ public sealed class SpectrumAnalyser
         for (int b = 0; b < _o.BandCount; b++)
         {
             bands[b] = Normalise(_bandDb[b]);
-            peaks[b] = Normalise(_peakDb[b]);
+            peaks[b] = Math.Clamp(_peakNorm[b], 0f, 1f);
         }
 
         var wave = new float[waveform.Length];
