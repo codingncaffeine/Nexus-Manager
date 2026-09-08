@@ -27,6 +27,11 @@ Not affiliated with or endorsed by Corsair.
 
 ## Screenshots
 
+The panel editor. The preview at the top is the 640x48 strip at 2x, exactly
+as the hardware draws it, and it pushes to the panel as you edit.
+
+![The panel editor](docs/screenshots/panel-editor.png)
+
 The Music Visualizer tab. 32 modes, named palettes, and a live preview of
 the strip as the panel is drawing it.
 
