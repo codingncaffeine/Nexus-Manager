@@ -18,6 +18,11 @@ public enum ActionKind
     /// <summary>Synthetic key press through a uinput virtual keyboard. This is
     /// iCUE's macro button. Wayland has no XTEST, so there is no other way.</summary>
     Key,
+
+    /// <summary>An ordered list of key events and waits - Corsair's macro.
+    /// <see cref="ActionKind.Key"/> is the one-key case of this and is kept
+    /// because it is what most buttons want and needs no editor.</summary>
+    Macro,
 }
 
 /// <summary>
@@ -41,6 +46,9 @@ public sealed class SystemAction
     /// </summary>
     public string? Target { get; set; }
 
+    /// <summary>The macro, when Kind is Macro. Null for every other kind.</summary>
+    public MacroSpec? Macro { get; set; }
+
     /// <summary>Step size for volume and brightness, in percent.</summary>
     public double Amount { get; set; } = 5;
 
@@ -53,6 +61,7 @@ public sealed class SystemAction
         ActionKind.Media => $"media {Target}",
         ActionKind.Brightness => $"brightness {Target} {Amount:0}%",
         ActionKind.Key => $"press {Target}",
+        ActionKind.Macro => Macro is null ? "macro (empty)" : $"macro: {Macro}",
         _ => Kind.ToString(),
     };
 }

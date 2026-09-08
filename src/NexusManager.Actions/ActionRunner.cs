@@ -42,6 +42,16 @@ public sealed class ActionRunner
                     LastError = $"no screen named '{name}'";
                 return;
 
+            case ActionKind.Macro:
+                // Handled HERE, not in RunOffThread. RunMacro spawns its own
+                // task, so dispatching it through another one meant
+                // MacroCompletion was still the previous, already-completed
+                // task when Run() returned - a caller awaiting it returned
+                // instantly and, in the CLI, exited before a key was sent.
+                if (action.Macro is { } m) RunMacro(m);
+                else LastError = "no macro on this button";
+                return;
+
             case ActionKind.Brightness:
                 AdjustBrightness?.Invoke(
                     string.Equals(action.Target, "down", StringComparison.OrdinalIgnoreCase)
@@ -83,6 +93,138 @@ public sealed class ActionRunner
                 }
                 break;
         }
+    }
+
+
+    // --- macros ---------------------------------------------------------------
+
+    private CancellationTokenSource? _macroCts;
+    private readonly Lock _macroGate = new();
+
+    /// <summary>Completes when the current macro finishes, or immediately if
+    /// none is running.
+    ///
+    /// ⛔ Needed because Run() is fire-and-forget by design. A caller that
+    /// polls a "still running" flag straight after Run() sees false - the
+    /// macro has not started yet - and a CLI doing that exits and kills the
+    /// macro before a single key is sent, while reporting success.</summary>
+    public Task MacroCompletion { get; private set; } = Task.CompletedTask;
+
+    /// <summary>True while a macro is running, so the editor can show it.</summary>
+    public bool MacroRunning => _macroCts is { IsCancellationRequested: false };
+
+    /// <summary>
+    /// Starts a macro, or stops the running one.
+    ///
+    /// ⛔ Pressing a macro button while a macro is running always STOPS it,
+    /// whatever its repeat mode. That is the toggle behaviour UntilPressedAgain
+    /// needs, and it doubles as the only escape from a macro that is repeating
+    /// faster than the user expected - on a touch panel there is no other way to
+    /// interrupt one.
+    /// </summary>
+    private void RunMacro(MacroSpec macro)
+    {
+        lock (_macroGate)
+        {
+            if (_macroCts is { IsCancellationRequested: false } running)
+            {
+                running.Cancel();
+                return;
+            }
+            _macroCts?.Dispose();
+            _macroCts = new CancellationTokenSource();
+        }
+
+        // Resolve every key BEFORE anything is sent. A macro that runs half way
+        // and then stops on an unknown name can leave a modifier held, and the
+        // user gets no clue which step was wrong.
+        var resolved = new Dictionary<string, ushort>(StringComparer.OrdinalIgnoreCase);
+        foreach (var step in macro.Steps)
+        {
+            if (step.Kind == MacroStepKind.Delay) continue;
+            string name = step.Key.Trim();
+            if (resolved.ContainsKey(name)) continue;
+            if (UinputKeyboard.Resolve(name) is { } code) resolved[name] = code;
+            else { LastError = $"unknown key '{name}' in macro"; return; }
+        }
+        if (macro.Steps.Count == 0) { LastError = "macro has no steps"; return; }
+
+        var cts = _macroCts!;
+        var done = new TaskCompletionSource();
+        MacroCompletion = done.Task;
+        _ = Task.Run(async () =>
+        {
+            // Every key this run has pressed and not yet released. The finally
+            // block below is the whole reason it is tracked.
+            var held = new HashSet<ushort>();
+            try
+            {
+                int passes = macro.Repeat switch
+                {
+                    MacroRepeat.Once => 1,
+                    MacroRepeat.Count => Math.Clamp(macro.RepeatCount, 1, 1000),
+                    _ => int.MaxValue,
+                };
+
+                for (int pass = 0; pass < passes && !cts.IsCancellationRequested; pass++)
+                {
+                    foreach (var step in macro.Steps)
+                    {
+                        if (cts.IsCancellationRequested) break;
+                        switch (step.Kind)
+                        {
+                            case MacroStepKind.Delay:
+                                await Task.Delay(Math.Clamp(step.DelayMs, 0, 60_000), cts.Token)
+                                          .ConfigureAwait(false);
+                                break;
+
+                            case MacroStepKind.KeyDown:
+                            {
+                                ushort c = resolved[step.Key.Trim()];
+                                string? e = _keyboard.Send(c, down: true);
+                                if (e is not null) { LastError = e; return; }
+                                held.Add(c);
+                                break;
+                            }
+
+                            case MacroStepKind.KeyUp:
+                            {
+                                ushort c = resolved[step.Key.Trim()];
+                                string? e = _keyboard.Send(c, down: false);
+                                if (e is not null) { LastError = e; return; }
+                                held.Remove(c);
+                                break;
+                            }
+
+                            default:
+                            {
+                                ushort c = resolved[step.Key.Trim()];
+                                string? e = _keyboard.Send(c, down: true);
+                                if (e is null) { held.Add(c); e = _keyboard.Send(c, down: false); }
+                                if (e is not null) { LastError = e; return; }
+                                held.Remove(c);
+                                break;
+                            }
+                        }
+                    }
+
+                    if (pass + 1 < passes && !cts.IsCancellationRequested)
+                        await Task.Delay(Math.Clamp(macro.RepeatDelayMs, 0, 60_000), cts.Token)
+                                  .ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) { /* stopped by a second press */ }
+            catch (Exception ex) { LastError = ex.Message; }
+            finally
+            {
+                // ⛔ ALWAYS, on every exit path. A cancelled macro that had a
+                // modifier down leaves it down for every application on the
+                // machine - the desktop behaves as though Ctrl is stuck and
+                // nothing explains why.
+                if (held.Count > 0) _keyboard.ReleaseAll(held);
+                done.TrySetResult();
+            }
+        }, CancellationToken.None);
     }
 
     private void Volume(SystemAction action)

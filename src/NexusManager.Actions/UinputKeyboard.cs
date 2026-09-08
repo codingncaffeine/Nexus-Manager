@@ -48,6 +48,47 @@ public sealed class UinputKeyboard : IDisposable
     private int _fd = -1;
     private readonly Lock _gate = new();
 
+    /// <summary>Resolves a key name, or null if it is not one we know.</summary>
+    public static ushort? Resolve(string key) =>
+        KeyCodes.TryGetValue(key.Trim(), out ushort c) ? c : null;
+
+    /// <summary>
+    /// Sends one key event without its partner, so a macro can hold a modifier
+    /// across other keys.
+    ///
+    /// ⛔ Whoever presses a key with this OWNS releasing it. A held key is real
+    /// at the kernel level: if the caller stops early without releasing, the
+    /// key stays down for every application on the machine until something
+    /// else sends the release. See ReleaseAll.
+    /// </summary>
+    public string? Send(ushort code, bool down)
+    {
+        lock (_gate)
+        {
+            string? err = EnsureDevice();
+            if (err is not null) return err;
+            err = Emit(EV_KEY, code, down ? 1 : 0);
+            return err ?? Emit(EV_SYN, SYN_REPORT, 0);
+        }
+    }
+
+    /// <summary>
+    /// Releases every key given, ignoring failures.
+    ///
+    /// This is the cleanup that stops a cancelled macro leaving Ctrl or Shift
+    /// stuck down across the whole desktop - which is not a cosmetic fault, it
+    /// makes the machine unusable until it is noticed and undone.
+    /// </summary>
+    public void ReleaseAll(IEnumerable<ushort> codes)
+    {
+        lock (_gate)
+        {
+            if (_fd < 0) return;
+            foreach (ushort c in codes) Emit(EV_KEY, c, 0);
+            Emit(EV_SYN, SYN_REPORT, 0);
+        }
+    }
+
     /// <summary>Presses and releases. Returns null on success, or why not.</summary>
     public string? Press(string combination)
     {

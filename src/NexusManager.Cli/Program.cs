@@ -137,6 +137,48 @@ switch (cmd)
         break;
     }
 
+    case "macro":
+    {
+        // Runs a macro from a JSON file, with no panel involved. The backlog
+        // asked for a way to test a button without touching the hardware; this
+        // is that for the one action type where getting it wrong is worst,
+        // because a macro can hold a modifier down across the whole desktop.
+        string? mfile = args.Length > 1 && !args[1].StartsWith('-') ? args[1] : null;
+        if (mfile is null || !File.Exists(mfile))
+        {
+            Console.Error.WriteLine("usage: nexus-manager macro <file.json>");
+            return 2;
+        }
+        MacroSpec? spec;
+        try
+        {
+            spec = JsonSerializer.Deserialize<MacroSpec>(await File.ReadAllTextAsync(mfile), JsonOpts);
+        }
+        catch (JsonException ex)
+        {
+            Console.Error.WriteLine($"{mfile} is not a valid macro: {ex.Message}");
+            return 2;
+        }
+        if (spec is null || spec.Steps.Count == 0)
+        {
+            Console.Error.WriteLine("macro has no steps");
+            return 2;
+        }
+
+        var mrunner = new ActionRunner();
+        Console.WriteLine($"running {spec}");
+        mrunner.Run(new SystemAction { Kind = ActionKind.Macro, Macro = spec });
+
+        // The runner is deliberately fire-and-forget, so wait for it here
+        // rather than exiting and killing the macro mid-way.
+        // Wait for the macro's own completion task, not for a flag: Run() is
+        // fire-and-forget, so the flag is still false the instant it returns.
+        await Task.WhenAny(mrunner.MacroCompletion, Task.Delay(120_000));
+        if (mrunner.LastError is { } merr) { Console.Error.WriteLine($"  {merr}"); return 1; }
+        Console.WriteLine("  done");
+        break;
+    }
+
     case "key":
     {
         // Fires a synthetic keypress through the uinput virtual keyboard, so
@@ -622,6 +664,7 @@ switch (cmd)
               anim <1-3> [--loop] play a firmware animation (anim stop to end it)
               preview [--screen N] render a screen to a PNG, no device needed
               key <combo>         send a synthetic keypress (ctrl+alt+t)
+              macro <file.json>   run a macro from a file, without the panel
               visualizer          music spectrum on the panel
                 --selftest        validate the DSP on synthetic signal, no hardware
                 --probe           what the audio capture is actually seeing
