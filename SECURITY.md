@@ -134,6 +134,29 @@ improved while the daemon would not boot.
   the one place that does capture output drains both pipes concurrently under a
   timeout.
 
+## Continuous integration
+
+Every push and pull request, plus a weekly run so a newly published advisory is
+found without waiting for a commit:
+
+- Build with warnings as errors, the DSP self-test, a real SkiaSharp render,
+  and the editor's full view self-test under `xvfb`
+- `dotnet list package --vulnerable --include-transitive`, and the deprecated
+  package check
+- A reproducibility check that builds the release tarball twice and fails if
+  the checksums differ
+- CodeQL for C# with the `security-and-quality` queries
+
+⛔ The dependency audit reads the command's OUTPUT, not its exit status.
+`dotnet list package --vulnerable` exits 0 even when it finds vulnerabilities,
+so the obvious way to write that check produces a green tick that can never
+fail - worse than no check, because it would be believed.
+
+CodeQL's first run found a real defect: a visualizer mode constructed four
+native `SKRoundRect` objects per bar per frame and disposed none, which leaks
+with no GC pressure and no symptom until the process is killed. Fixed in
+`e09dc7f`.
+
 ## Supply chain
 
 Release packages bundle the .NET runtime, so they depend only on system
@@ -142,6 +165,16 @@ a sweep of the published binaries — `objdump -p` for `NEEDED` entries plus a
 strings sweep for libraries loaded via `dlopen` — rather than being written from
 memory. `packaging/test-deb.sh` asserts the package contents against the build
 and then launches the binaries out of the extracted package.
+
+Builds are deterministic on a single toolchain - CI proves it on every push by
+building twice and comparing - and each release ships a `SHA256SUMS` file.
+
+⛔ They are NOT reproducible across machines. A CI build and a workstation
+build of the same commit produce different tarballs, because a self-contained
+publish bundles a .NET runtime whose version tracks the installed SDK patch.
+`global.json` narrows this; it does not close it. So a release is verifiable
+if you match the toolchain, and not otherwise - which is weaker than a
+reproducible-builds claim and is not presented as one.
 
 Release artifacts are built from the tagged commit and their checksums are
 recorded in the AUR package.
