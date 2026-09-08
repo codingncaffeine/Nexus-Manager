@@ -232,6 +232,7 @@ public sealed partial class MainWindow : Window
         _timer.Start();
         ShowView(_view);
         if (App.ProbeDrag) { Stage("probe"); RunDragProbe(); return; }
+        if (App.ProbeAction) { Stage("probe-action"); _ = RunActionProbe(); return; }
         if (App.SelfTest) { Stage("selftest"); RunSelfTest(); return; }
         Stage("ready");
     }

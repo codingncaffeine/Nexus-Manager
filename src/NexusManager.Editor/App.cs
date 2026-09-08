@@ -37,6 +37,11 @@ public sealed class App : Application
     /// <summary>Measure whether drag-to-resize actually works (--probe-drag).</summary>
     public static bool ProbeDrag { get; set; }
 
+    /// <summary>Measure whether a button's action edit reaches the model and the
+    /// file (--probe-action). Answers the last open question about the Volume
+    /// buttons with a measurement rather than by reading the wiring.</summary>
+    public static bool ProbeAction { get; set; }
+
     /// <summary>Run the UI without opening the panel (--no-device). Lets the
     /// editor be soaked or profiled while a real instance owns the hardware,
     /// instead of having to stop the one that is actually driving the display.

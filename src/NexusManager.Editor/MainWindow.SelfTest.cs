@@ -153,14 +153,6 @@ public sealed partial class MainWindow
         Console.Out.WriteLine(failures == 0
             ? "[selftest] PASS"
             : $"[selftest] FAIL ({failures})");
-        Console.Out.Flush();
-
-        _quitting = true;
-        Dispatcher.UIThread.Post(() =>
-        {
-            if (Avalonia.Application.Current?.ApplicationLifetime
-                is IClassicDesktopStyleApplicationLifetime desktop)
-                desktop.Shutdown(failures == 0 ? 0 : 1);
-        });
+        EndDiagnostic(failures == 0 ? 0 : 1);
     }
 }

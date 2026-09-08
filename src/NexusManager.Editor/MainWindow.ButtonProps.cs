@@ -112,6 +112,10 @@ public sealed partial class MainWindow
         kind.SelectionChanged += (_, _) =>
         {
             if (_building || kind.SelectedItem is not ActionKind v) return;
+            if (TraceActions)
+                Console.Out.WriteLine(
+                    $"[action]   !! the Action-kind handler fired ({v}) and is about to reset Target, "
+                    + $"which currently holds '{b.Action.Target}'");
             b.Action.Kind = v;
             // A sensible target for the new kind, so switching does not leave the
             // button pointing at something meaningless from the previous one.

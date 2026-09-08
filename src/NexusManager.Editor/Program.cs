@@ -25,7 +25,8 @@ internal static class Program
             App.SelfTest = args.Contains("--selftest");
             App.NoDevice = args.Contains("--no-device");
             App.ProbeDrag = args.Contains("--probe-drag");
-            if (App.ProbeDrag) { App.NoDevice = true; App.StartHidden = true; }
+            App.ProbeAction = args.Contains("--probe-action");
+            if (App.ProbeDrag || App.ProbeAction) { App.NoDevice = true; App.StartHidden = true; }
             if (App.SelfTest) App.StartHidden = true;
             // ⛔ SINGLE INSTANCE, NO EXEMPTIONS. Decided before Avalonia starts.
             //
@@ -44,7 +45,7 @@ internal static class Program
                 string holder = SingleInstance.DescribeHolder();
                 // Launching again is how people ask for the window back, so treat
                 // it as exactly that rather than as an error.
-                if (!App.SelfTest && !App.ProbeDrag && SingleInstance.Signal("show"))
+                if (!App.SelfTest && !App.ProbeDrag && !App.ProbeAction && SingleInstance.Signal("show"))
                     Console.Error.WriteLine(
                         "Nexus Manager is already running - bringing its window to the front.");
                 else

@@ -10,6 +10,12 @@ using SkiaSharp;
 
 JsonSerializerOptions JsonOpts = Config.Json;
 
+// Instruments write through a pipe to tee often enough that buffering has
+// already cost two captures: .NET buffers stdout to a pipe, so a process that
+// is killed rather than exited loses its report entirely and reads as "it
+// printed nothing".
+Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
+
 string cmd = args.Length > 0 ? args[0] : "help";
 bool fahrenheit = args.Contains("--fahrenheit") || args.Contains("-f");
 
@@ -358,6 +364,26 @@ switch (cmd)
         break;
     }
 
+    case "calibrate":
+    {
+        // Does a tap land where it looks like it lands? Measured rather than
+        // assumed: the 0..639 range in _docs/PROTOCOL.md was inferred from the
+        // panel width, and no capture in that document ever exceeded 533.
+        int cvAt = Array.IndexOf(args, "--preview");
+        if (cvAt >= 0)
+        {
+            string cvOut = cvAt + 1 < args.Length ? args[cvAt + 1] : "calibration-card.png";
+            int cvTarget = 0;
+            int ctAt = Array.IndexOf(args, "--target");
+            if (ctAt >= 0 && ctAt + 1 < args.Length) int.TryParse(args[ctAt + 1], out cvTarget);
+            if (args.Contains("--sweep")) return Calibrate.PreviewSweep(cvOut);
+            return Calibrate.PreviewCard(cvOut, cvTarget);
+        }
+        if (args.Contains("--sweep")) return await Calibrate.RunSweepAsync();
+        if (args.Contains("--live")) return await Calibrate.RunLiveAsync();
+        return await Calibrate.RunAsync();
+    }
+
     case "image":
     {
         // Instrument for backgrounds. Reports what a file ACTUALLY decoded to -
@@ -451,6 +477,7 @@ switch (cmd)
               run [file] [-f]     render a screen config to the panel
               bench [seconds]     raw frame upload rate
               touch               live gesture stream
+              calibrate           tap known targets to measure touch alignment
               image <file>        inspect a background image or animation
               blank               clear the panel and turn its backlight off
               preview [--screen N] render a screen to a PNG, no device needed
