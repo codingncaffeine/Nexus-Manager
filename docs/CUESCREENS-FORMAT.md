@@ -85,13 +85,49 @@ Observed polymorphic types:
 
 ## Known gaps
 
-These six packs are all keyboard-macro screens, so they exercise only part of
-the vocabulary. Every enum above shows exactly one value, which means the value
-space is UNKNOWN, not single-valued. iCUE also offers launch, media and device
-actions that appear nowhere here.
+⛔ **PARTLY RESOLVED 2026-09-08 without a VM.** Enumerating every enum value
+across all six packs at once gives the MACRO vocabulary outright:
 
-Resolve by driving iCUE in the VM and exporting screens that use each action
-type and each font size — that enumerates the enums cheaply, without USB capture.
+    polymorphic_name   MacroAction, KeyboardMacroActionEvent, DelayMacroActionEvent
+    sub                KeyPress, KeyRelease          (60 of each — balanced)
+    execHint           OnPress
+    repeatMode         NoRepeat
+    delayMode          Constant
+    terminationMethod  Interrupt
+    fontSize           Medium
+
+The single-valued ones are still single-SAMPLED rather than single-valued, and
+iCUE plainly offers more (a repeat mode called NoRepeat implies siblings). But
+the STRUCTURE is now known, which is what an importer needs.
+
+Still genuinely unknown, and still needing an iCUE export session: the non-macro
+action types (launch, media, device settings) appear nowhere in these packs,
+because all six are keyboard-macro screens.
+
+### The macro model — decoded 2026-09-08
+
+A macro is an ORDERED LIST OF EVENTS, and there are two kinds:
+
+    KeyboardMacroActionEvent   keys[] (a list, so a step can be a chord)
+                               sub = KeyPress | KeyRelease
+    DelayMacroActionEvent      delay (ms), useRandom
+
+plus macro-level `repeatOptions` (repeatCount, repeatMode, delay, delayMode,
+randomDelayFrom/To) and `executionHints` (execHint, terminateOnSecondExec,
+restartOnSecondExec, retainOriginalKeyOutput).
+
+⛔ **This settles the "recorded vs authored" question for our own macros, and
+the answer is that it is a false choice.** Press and release are separate
+events and a delay is a first-class event between them, so a RECORDED macro and
+an AUTHORED one produce the identical structure — recording merely fills the
+delay values in from measurement. One observed delay is `36`, which is not a
+number a human types.
+
+So: build the step list (key press / key release / delay, plus repeat options).
+Recording becomes an optional INPUT METHOD later, needing no change to the
+stored shape and no change to the file format. Choosing per-step captured
+timing as a separate model would have made Corsair's own macros lossy on
+import, since they carry no timestamps — only delay steps.
 
 ## Import rules for us
 
