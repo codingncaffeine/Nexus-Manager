@@ -316,9 +316,29 @@ switch (cmd)
         int prAt = Array.IndexOf(args, "--press");
         if (prAt >= 0 && prAt + 1 < args.Length) int.TryParse(args[prAt + 1], out pressed);
 
+        // ⛔ Visualizer cells were missing from this call entirely, so a preview
+        // of a screen carrying one showed an empty strip - the same picture a
+        // broken visualizer would produce. --audio opens a capture so the
+        // preview shows what the panel will actually draw.
+        NexusManager.Audio.AudioCapture? pcap = null;
+        if (pvis.Count > 0 && args.Contains("--audio"))
+        {
+            int pbands = pvis.Max(v => v.Spec.EffectiveBands);
+            pcap = new NexusManager.Audio.AudioCapture(
+                new NexusManager.Audio.AnalyserOptions { BandCount = pbands });
+            pcap.Start();
+            // Long enough for the ring to fill and a few hops to publish.
+            for (int w = 0; w < 40 && pcap.Current.Sequence < 5; w++) await Task.Delay(100);
+            var pf = pcap.Current;
+            Console.WriteLine($"  audio: seq {pf.Sequence}, peak {pf.PeakDbfs:F1} dBFS, "
+                + (pf.Silent ? "gate shut" : "gate open"));
+        }
+
         prend.Draw(pcanvas, pmods, phist,
             k => { double v = reg.Read(k); return double.IsNaN(v) ? 0 : v; },
-            pscreen.Background, TimeSpan.Zero, pbtns, pressed, TimeSpan.FromDays(1));
+            pscreen.Background, TimeSpan.Zero, pbtns, pressed, TimeSpan.FromDays(1),
+            pvis, pcap?.Current, 1f / 30f);
+        pcap?.Dispose();
         if (pset.ShowPageIndicator)
             PageIndicator.Draw(pcanvas.Canvas, which, pset.Screens.Count, pscreen.Theme.CaptionColor);
 

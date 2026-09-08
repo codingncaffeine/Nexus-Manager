@@ -9,6 +9,13 @@ namespace NexusManager.Editor;
 public sealed partial class MainWindow
 {
     private readonly ListBox _visList = new();
+
+    /// <summary>Its own panel in the CELLS column, not a section appended to
+    /// Appearance. ⛔ It was added last in a narrow scrolling column, seventh of
+    /// eight sections behind a font picker and three colour pickers - present,
+    /// correct, and undiscoverable. A control nobody can find has not shipped.
+    /// </summary>
+    private readonly StackPanel _visProps = new() { Spacing = 6 };
     private int _visIndex;
 
     private VisualizerSpec? SelectedVisualizer =>
@@ -28,10 +35,7 @@ public sealed partial class MainWindow
     /// </summary>
     private void RefreshVisualizerSection()
     {
-        _themeProps.Children.Add(Head("Visualizers"));
-        _themeProps.Children.Add(Style.Note(
-            "Music visualizers share the strip with readouts and buttons. Add one to "
-          + "this screen and swipe to it like any other."));
+        _visProps.Children.Clear();
 
         _visList.Background = Brushes.Transparent;
         _visList.BorderThickness = new Thickness(0);
@@ -45,7 +49,7 @@ public sealed partial class MainWindow
             _visList.SelectedIndex = Screen.Visualizers.Count == 0
                 ? -1 : Math.Clamp(_visIndex, 0, Screen.Visualizers.Count - 1);
         });
-        _themeProps.Children.Add(_visList);
+        _visProps.Children.Add(_visList);
 
         var row = new StackPanel
         {
@@ -65,12 +69,12 @@ public sealed partial class MainWindow
             _visIndex = Math.Max(0, _visIndex - 1);
             Changed(); RefreshThemePanel();
         }));
-        _themeProps.Children.Add(row);
+        _visProps.Children.Add(row);
 
         var v = SelectedVisualizer;
         if (v is null)
         {
-            _themeProps.Children.Add(Style.Note(
+            _visProps.Children.Add(Style.Note(
                 "No visualizer on this screen. Adding one needs an audio server - the "
               + "capture uses parec, from pulseaudio-utils or libpulse."));
             return;
@@ -82,29 +86,29 @@ public sealed partial class MainWindow
         // Only the modes that actually have a draw routine. Offering the enum
         // would list modes that silently render as bars.
         string[] modes = VisualizerRenderer.Implemented.Select(k => k.ToString()).ToArray();
-        _themeProps.Children.Add(Row("Mode", Choice(modes, v.Kind.ToString(), s =>
+        _visProps.Children.Add(Row("Mode", Choice(modes, v.Kind.ToString(), s =>
         {
             if (Enum.TryParse<VisualizerKind>(s, out var k)) { v.Kind = k; Changed(); RefreshVisualizerLabels(); }
         })));
 
         string[] palettes = Enum.GetNames<VisualizerPalette>();
-        _themeProps.Children.Add(Row("Palette", Choice(palettes, v.Palette.ToString(), s =>
+        _visProps.Children.Add(Row("Palette", Choice(palettes, v.Palette.ToString(), s =>
         {
             if (Enum.TryParse<VisualizerPalette>(s, out var p)) { v.Palette = p; Changed(); }
         })));
 
-        _themeProps.Children.Add(Row("Bands", Num(v.BandCount, n =>
+        _visProps.Children.Add(Row("Bands", Num(v.BandCount, n =>
         {
             v.BandCount = (int)Math.Clamp(n, 4, 128);
             Changed(); RefreshVisualizerLabels();
         })));
 
-        _themeProps.Children.Add(Row("Width", Num(v.Weight, n => { v.Weight = Math.Max(0.05, n); Changed(); })));
-        _themeProps.Children.Add(Style.Note(
+        _visProps.Children.Add(Row("Width", Num(v.Weight, n => { v.Weight = Math.Max(0.05, n); Changed(); })));
+        _visProps.Children.Add(Style.Note(
             "Share of the strip, the same units a readout uses. Three readouts and one "
           + "visualizer at width 1 each gives the visualizer a quarter."));
 
-        _themeProps.Children.Add(Row("Gap", Num(v.Gap, n => { v.Gap = (int)Math.Clamp(n, 0, 8); Changed(); })));
+        _visProps.Children.Add(Row("Gap", Num(v.Gap, n => { v.Gap = (int)Math.Clamp(n, 0, 8); Changed(); })));
 
         var peaks = new CheckBox { Content = "Peak caps", IsChecked = v.ShowPeaks };
         peaks.IsCheckedChanged += (_, _) =>
@@ -112,11 +116,11 @@ public sealed partial class MainWindow
             if (_building) return;
             v.ShowPeaks = peaks.IsChecked == true; Changed();
         };
-        _themeProps.Children.Add(peaks);
+        _visProps.Children.Add(peaks);
 
-        _themeProps.Children.Add(Row("Bar colour", Colour(v.Color, s => { v.Color = s ?? "#3B9AE1"; Changed(); })));
-        _themeProps.Children.Add(Row("Cap colour", Colour(v.PeakColor, s => { v.PeakColor = s ?? "#E8E8F0"; Changed(); })));
-        _themeProps.Children.Add(Style.Note(
+        _visProps.Children.Add(Row("Bar colour", Colour(v.Color, s => { v.Color = s ?? "#3B9AE1"; Changed(); })));
+        _visProps.Children.Add(Row("Cap colour", Colour(v.PeakColor, s => { v.PeakColor = s ?? "#E8E8F0"; Changed(); })));
+        _visProps.Children.Add(Style.Note(
             "Cap colour is independent of the bars - green bars under a red or white "
           + "cap is the combination these meters are remembered for."));
     }

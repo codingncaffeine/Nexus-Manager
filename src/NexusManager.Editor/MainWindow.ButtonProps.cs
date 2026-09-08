@@ -31,11 +31,13 @@ public sealed partial class MainWindow
     /// </summary>
     private void BuildButtonSection()
     {
-        // ⛔ FIRST, not last. The button section returns early when a screen
-        // has no buttons - which is exactly what a music screen looks like -
-        // so anything appended after it is simply never emitted. Placed at the
-        // end, the whole visualizer editor was invisible on the screens most
-        // likely to want one, and the self-test caught it.
+        // Populates the Visualizers card in the CELLS column. Called from here
+        // because this runs on every change that can alter a screen's cells.
+        //
+        // ⛔ It must stay ahead of the early return below: that fires when a
+        // screen has no buttons, which is exactly what a music screen looks
+        // like, so anything after it never runs on the screens most likely to
+        // want a visualizer.
         RefreshVisualizerSection();
 
         _themeProps.Children.Add(Head("Buttons"));

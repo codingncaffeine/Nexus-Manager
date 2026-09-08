@@ -56,6 +56,15 @@ jobs:
       # the cereal behaviour that produced three separate importer faults, each
       # of which looked like success. The real packs are Corsair's and cannot
       # be committed, so the fixture is generated.
+      # ⛔ The one check that would have caught a visualizer screen rendering
+      # nothing: it runs the editor's real Tick against a real capture and
+      # compares the frame to the same frame without audio. Skipped when no
+      # config here carries a visualizer, which is the CI default.
+      - name: Editor visualizer probe
+        run: |
+          xvfb-run -a ./src/NexusManager.Editor/bin/Release/net10.0/nexus-manager-editor \
+            --probe-visualizer || test $? -eq 2
+
       - name: Import self-test
         run: ./src/NexusManager.Cli/bin/Release/net10.0/nexus-manager import --selftest
 

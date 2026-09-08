@@ -238,6 +238,7 @@ public sealed partial class MainWindow : Window
         ShowView(_view);
         if (App.ProbeDrag) { Stage("probe"); RunDragProbe(); return; }
         if (App.ProbeAction) { Stage("probe-action"); _ = RunActionProbe(); return; }
+        if (App.ProbeVisualizer) { Stage("probe-visualizer"); _ = RunVisualizerProbe(); return; }
         if (App.SelfTest) { Stage("selftest"); RunSelfTest(); return; }
         Stage("ready");
     }
@@ -426,13 +427,19 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private bool ShouldSampleSensors()
     {
-        var now = _clock.Elapsed;
-        if (now - _lastSample < TimeSpan.FromMilliseconds(200)) return false;
-        _lastSample = now;
+        // ⛔ A DEADLINE, not "now minus last". The subtraction form needs a
+        // sentinel for "never sampled", and TimeSpan.MinValue as that sentinel
+        // makes (now - _lastSample) OVERFLOW - which threw on every single
+        // tick and killed the editor's whole render loop, for every screen,
+        // not just the ones with a visualizer. The daemon has always used a
+        // deadline for this and has never had the problem.
+        if (_clock.Elapsed < _nextSample) return false;
+        _nextSample = _clock.Elapsed + TimeSpan.FromMilliseconds(200);
         return true;
     }
 
-    private TimeSpan _lastSample = TimeSpan.MinValue;
+
+    private TimeSpan _nextSample = TimeSpan.Zero;
 
     private void MaintainPanelAudio()
     {

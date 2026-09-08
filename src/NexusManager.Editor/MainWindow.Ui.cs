@@ -142,9 +142,23 @@ public sealed partial class MainWindow
         listDock.Children.Add(listButtons);
         listDock.Children.Add(_moduleList);
 
+        // Column 0 holds the CELLS on the strip: readouts on top, visualizers
+        // beneath them. ⛔ The visualizer editor first went into the Appearance
+        // column, where it landed seventh of eight sections and nobody could
+        // find it. A visualizer is a cell, so it belongs with the cells.
+        var cellCol = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
+
         var modulesCard = Style.CardPanel("Modules", "left to right on the strip", listDock);
-        modulesCard.Margin = new Thickness(0, 0, 10, 0);
-        Grid.SetColumn(modulesCard, 0); cols.Children.Add(modulesCard);
+        modulesCard.Margin = new Thickness(0, 0, 10, 8);
+        Grid.SetRow(modulesCard, 0); cellCol.Children.Add(modulesCard);
+
+        var visCard = Style.CardPanel("Visualizers",
+            "music, sharing the strip by weight",
+            new ScrollViewer { Content = _visProps, MaxHeight = 260 });
+        visCard.Margin = new Thickness(0, 0, 10, 0);
+        Grid.SetRow(visCard, 1); cellCol.Children.Add(visCard);
+
+        Grid.SetColumn(cellCol, 0); cols.Children.Add(cellCol);
 
         var propsCard = Style.CardPanel("Module", "", new ScrollViewer { Content = _moduleProps });
         propsCard.Margin = new Thickness(0, 0, 10, 0);

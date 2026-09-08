@@ -36,6 +36,7 @@ public sealed class App : Application
 
     /// <summary>Measure whether drag-to-resize actually works (--probe-drag).</summary>
     public static bool ProbeDrag { get; set; }
+    public static bool ProbeVisualizer { get; set; }
 
     /// <summary>Measure whether a button's action edit reaches the model and the
     /// file (--probe-action). Answers the last open question about the Volume

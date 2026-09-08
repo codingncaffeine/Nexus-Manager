@@ -247,6 +247,21 @@ public sealed partial class MainWindow
             RefreshThemePanel();
             _themeProps.Measure(new Avalonia.Size(400, 2000));
 
+            // Where the section lands matters as much as whether it exists: the
+            // Appearance column is narrow and scrolls, so a section added last is
+            // one a user has to go looking for.
+            // The section must be in the CELLS column, not buried in Appearance.
+            var heads = _themeProps.Children.OfType<TextBlock>()
+                .Where(t => t.FontWeight == Avalonia.Media.FontWeight.Bold)
+                .Select(t => t.Text ?? "").ToList();
+            Console.Out.WriteLine($"[selftest] theme sections: {string.Join(" | ", heads)}");
+            if (heads.Contains("Visualizers"))
+            {
+                failures++;
+                Console.Out.WriteLine("[selftest] visualizer FAILED: the editor is back "
+                                    + "in the Appearance column, where it cannot be found");
+            }
+
             int listed = _visList.ItemsSource?.Cast<object>().Count() ?? 0;
             bool ok = listed == Screen.Visualizers.Count && listed > before;
 
@@ -278,6 +293,13 @@ public sealed partial class MainWindow
             // Measured on the PANEL view: on the music tab a fast tick is correct
             // whatever the screen holds, so leaving the view wherever the previous
             // checks left it would assert nothing.
+            // ⛔ Save and restore the screen's OWN cells. Assuming the screen
+            // starts with none made the baseline fast whenever the user's
+            // config already had a visualizer, and the check then compared
+            // fast against fast and failed on correct behaviour.
+            var keepVis = Screen.Visualizers.ToList();
+            Screen.Visualizers.Clear();
+
             string keepView = _view;
             _view = "panel";
             MaintainTickRate();
@@ -286,10 +308,12 @@ public sealed partial class MainWindow
             MaintainTickRate();
             var fast = _timer.Interval;
 
-            Screen.Visualizers.RemoveAt(Screen.Visualizers.Count - 1);
+            Screen.Visualizers.Clear();
             MaintainTickRate();
             var back = _timer.Interval;
 
+            Screen.Visualizers.Clear();
+            Screen.Visualizers.AddRange(keepVis);
             _view = keepView;
             MaintainTickRate();
 

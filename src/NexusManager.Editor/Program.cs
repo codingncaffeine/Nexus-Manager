@@ -26,7 +26,8 @@ internal static class Program
             App.NoDevice = args.Contains("--no-device");
             App.ProbeDrag = args.Contains("--probe-drag");
             App.ProbeAction = args.Contains("--probe-action");
-            if (App.ProbeDrag || App.ProbeAction) { App.NoDevice = true; App.StartHidden = true; }
+            App.ProbeVisualizer = args.Contains("--probe-visualizer");
+            if (App.ProbeDrag || App.ProbeAction || App.ProbeVisualizer) { App.NoDevice = true; App.StartHidden = true; }
             if (App.SelfTest) App.StartHidden = true;
             // ⛔ SINGLE INSTANCE, NO EXEMPTIONS. Decided before Avalonia starts.
             //
