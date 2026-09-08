@@ -23,6 +23,9 @@
          source built in two directories produces different binaries. -->
     <PathMap>$(MSBuildThisFileDirectory)=/nexus-manager/</PathMap>
     <Deterministic>true</Deterministic>
-    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <!-- Unconditional, not CI-only. Making it conditional meant CI and a
+         workstation produced DIFFERENT binaries from the same commit by
+         design, which defeats the point of a reproducible build. -->
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
   </PropertyGroup>
 </Project>

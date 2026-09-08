@@ -502,16 +502,23 @@ public sealed class VisualizerRenderer : IDisposable
             SKColor c = _colors[b];
             float r = MathF.Min(barW / 2f, h / 2f);
 
+            // ⛔ The SKRect/radius overload, NOT new SKRoundRect(...). SKRoundRect
+            // wraps native memory the GC cannot see, so one per shape per bar per
+            // frame - four here - leaks with ZERO GC pressure: no memory warning,
+            // no collection, nothing to suggest a problem until the process is
+            // killed. At 64 bands and 30 fps that was about 7700 native objects a
+            // second. Found by CodeQL, not by watching it run.
+            //
             // Halo first, so the solid capsule sits on top of it.
             for (int g = 2; g >= 1; g--)
             {
                 _bar.Color = c.WithAlpha((byte)(46 / g));
                 canvas.DrawRoundRect(
-                    new SKRoundRect(new SKRect(x - g, y - g, x + barW + g, rect.Bottom + g), r + g), _bar);
+                    new SKRect(x - g, y - g, x + barW + g, rect.Bottom + g), r + g, r + g, _bar);
             }
 
             _bar.Color = c;
-            canvas.DrawRoundRect(new SKRoundRect(new SKRect(x, y, x + barW, rect.Bottom), r), _bar);
+            canvas.DrawRoundRect(new SKRect(x, y, x + barW, rect.Bottom), r, r, _bar);
 
             if (!spec.ShowPeaks) continue;
             float p = frame.Peaks[b] * rect.Height;
@@ -520,8 +527,7 @@ public sealed class VisualizerRenderer : IDisposable
             // otherwise entirely rounded display.
             float capY = MathF.Max(rect.Top, rect.Bottom - p - 2f);
             _cap.Color = capColor;
-            canvas.DrawRoundRect(
-                new SKRoundRect(new SKRect(x, capY, x + barW, capY + 2f), 1f), _cap);
+            canvas.DrawRoundRect(new SKRect(x, capY, x + barW, capY + 2f), 1f, 1f, _cap);
         }
     }
 
