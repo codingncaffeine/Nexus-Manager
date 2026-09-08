@@ -253,7 +253,13 @@ public sealed partial class MainWindow : Window
             // dead black strip on the keyboard. See NexusDevice.HandBack.
             _device?.HandBack(_set.IdleAnimation, _set.Brightness);
         }
-        catch (Exception) { }
+        catch (Exception ex)
+        {
+            // Worth a line: the difference between this working and not is a
+            // panel left showing a stale frame after the application has gone,
+            // which reads as broken hardware.
+            Console.Error.WriteLine($"[device] could not hand the panel back: {ex.Message}");
+        }
         StopTouch();
         _device?.Dispose();
         // Remove the tray icon explicitly: leaving it to finalisation can leave

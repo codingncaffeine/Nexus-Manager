@@ -27,6 +27,11 @@ public sealed class ActionRunner
 
     public void Run(SystemAction action)
     {
+        // ⛔ Cleared per action. Without this, LastError means "the first
+        // thing that ever went wrong" rather than "what just happened": a
+        // failure from ten minutes ago stays on screen as though it were
+        // current, and a later, more specific message cannot replace it.
+        LastError = null;
         if (action.Kind == ActionKind.None) return;
 
         // Screen and brightness are immediate and cheap; the rest shells out.
@@ -125,7 +130,12 @@ public sealed class ActionRunner
         };
 
         string? player = FindMprisPlayer();
-        if (player is null) { LastError = "no MPRIS media player is running"; return; }
+        // Only claim "nothing is playing" when the lookup actually succeeded.
+        if (player is null)
+        {
+            LastError ??= "no MPRIS media player is running";
+            return;
+        }
 
         if (Which("gdbus") is not null)
             Start("gdbus", ["call", "--session", "--dest", player,
@@ -138,23 +148,42 @@ public sealed class ActionRunner
             LastError = "no gdbus or busctl for media control";
     }
 
-    private static string? FindMprisPlayer()
+    /// <summary>
+    /// Finds a running MPRIS player on the session bus.
+    ///
+    /// ⛔ Returns null for "no player is running" ONLY. A failure to ask - busctl
+    /// missing, the session bus unreachable - sets <see cref="LastError"/> and is
+    /// reported as itself. Collapsing both into null told the user "no MPRIS
+    /// media player is running" when the truth was that nothing had been able to
+    /// look, which sends them to start a player that is already playing.
+    /// </summary>
+    private string? FindMprisPlayer()
     {
+        if (Which("busctl") is null)
+        {
+            LastError = "busctl is not installed, so running players cannot be listed";
+            return null;
+        }
+
+        string output;
         try
         {
-            if (Which("busctl") is null) return null;
-            string output = Capture("busctl", ["--user", "list", "--no-pager", "--no-legend"]);
-            foreach (string line in output.Split('\n'))
-            {
-                string name = line.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
-                if (name.StartsWith("org.mpris.MediaPlayer2.", StringComparison.Ordinal))
-                    return name;
-            }
+            output = Capture("busctl", ["--user", "list", "--no-pager", "--no-legend"]);
         }
-        catch (Exception) { }
+        catch (Exception ex)
+        {
+            LastError = $"could not list session bus names: {ex.Message}";
+            return null;
+        }
+
+        foreach (string line in output.Split('\n'))
+        {
+            string name = line.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+            if (name.StartsWith("org.mpris.MediaPlayer2.", StringComparison.Ordinal))
+                return name;
+        }
         return null;
     }
-
     // --- process helpers ------------------------------------------------------
 
     private static readonly Dictionary<string, string?> WhichCache = new(StringComparer.Ordinal);

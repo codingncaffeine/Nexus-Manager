@@ -126,10 +126,15 @@ public sealed class AudioCapture : IDisposable
         }
     }
 
-    /// <summary>Whether a sink's monitor is actually RUNNING. A SUSPENDED
-    /// monitor emits zeros rather than an error, so "flat" needs this to be
-    /// distinguishable from silence (D51).</summary>
-    public static bool MonitorRunning(string sink)
+    /// <summary>
+    /// Whether a sink's monitor is actually RUNNING.
+    ///
+    /// ⛔ Returns null for "could not tell", never false. A monitor on a suspended
+    /// sink emits zeros rather than an error, so "flat display" already has
+    /// several indistinguishable causes (D51) - and reporting SUSPENDED when the
+    /// truth is that pactl could not be run adds one more, stated as a fact.
+    /// </summary>
+    public static bool? MonitorRunning(string sink)
     {
         try
         {
@@ -138,20 +143,19 @@ public sealed class AudioCapture : IDisposable
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             });
-            if (p is null) return false;
+            if (p is null) return null;
             string all = p.StandardOutput.ReadToEnd();
             p.WaitForExit(2000);
             foreach (string line in all.Split('\n'))
                 if (line.Contains(sink + ".monitor", StringComparison.Ordinal))
                     return line.Contains("RUNNING", StringComparison.Ordinal);
-            return false;
+            return null;                  // the sink was not listed at all
         }
         catch (Exception)
         {
-            return false;
+            return null;
         }
     }
-
     private void Loop()
     {
         while (!_cts.IsCancellationRequested)

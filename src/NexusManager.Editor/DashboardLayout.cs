@@ -157,7 +157,12 @@ public sealed class DashboardLayout
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
             File.WriteAllText(Path, JsonSerializer.Serialize(this, Json));
         }
-        catch (Exception) { }
+        // ⛔ NOT silent. This file holds every rename, the group order, which
+        // sensors are hidden and what is pinned to Home - hours of arranging.
+        // Swallowing a write failure means the user rearranges the dashboard,
+        // closes the application and finds the work gone with nothing having
+        // said so. AppSettings.Save reports; this did not.
+        catch (Exception ex) { Console.Error.WriteLine($"[dashboard] save failed: {ex.Message}"); }
     }
 }
 

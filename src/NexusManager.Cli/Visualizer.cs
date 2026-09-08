@@ -195,7 +195,7 @@ public static class Visualizer
             return 1;
         }
         Console.WriteLine($"  monitor      : {sink}.monitor "
-                        + $"({(AudioCapture.MonitorRunning(sink) ? "RUNNING" : "SUSPENDED")})");
+                        + $"({AudioCapture.MonitorRunning(sink) switch { true => "RUNNING", false => "SUSPENDED", null => "state unknown - could not read pactl" }})");
         Console.WriteLine();
 
         var o = new AnalyserOptions();
