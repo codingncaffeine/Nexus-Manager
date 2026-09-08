@@ -330,6 +330,7 @@ public sealed partial class MainWindow : Window
 
         MaintainDevice();
         MaintainPanelAudio();
+        MaintainTickRate();
 
         // The visualizer owns the frame when its tab is up. It renders its
         // own canvas and shares the push path below, but must NOT fall
@@ -342,7 +343,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        _reg.Sample();
+        if (ShouldSampleSensors()) _reg.Sample();
 
         var (layout, buttonLayout, visualLayout) = ScreenLayout.ComputeAll(Screen, out _);
         _buttonLayout = buttonLayout;
@@ -396,6 +397,43 @@ public sealed partial class MainWindow : Window
     /// closes it when none does. A sensor-only configuration - which is most of
     /// them - must never hold a parec process open.
     /// </summary>
+    /// <summary>
+    /// One place decides the tick rate, because two did not agree.
+    ///
+    /// ⛔ The editor ticks at 250 ms - four frames a second - which is right for
+    /// sensor readouts and useless for audio. The Music Visualizer tab raised it
+    /// and put it back; a PANEL screen carrying a visualizer did not, so one
+    /// rendered at 4 fps on the strip while looking correct in every test. That
+    /// is the regression this method exists to prevent recurring: the decision is
+    /// made from the state, in one place, every tick.
+    /// </summary>
+    private void MaintainTickRate()
+    {
+        bool fast = _view == "music" || (_ready && Screen.NeedsAudio);
+        var want = fast ? MusicInterval : EditorInterval;
+        if (_timer.Interval != want) _timer.Interval = want;
+    }
+
+    /// <summary>
+    /// Samples sensors on WALL TIME, not once per tick.
+    ///
+    /// ⛔ A full sweep of every sensor this machine reports is expensive - it
+    /// once cost 41 ms of a 41.7 ms budget in the daemon, which is why the daemon
+    /// has had SampleIntervalMs from the start. The editor sampled once per tick
+    /// instead, which was harmless at 4 fps and would be ruinous at 30: raising
+    /// the frame rate for a visualizer would have multiplied sensor reads by
+    /// seven and a half.
+    /// </summary>
+    private bool ShouldSampleSensors()
+    {
+        var now = _clock.Elapsed;
+        if (now - _lastSample < TimeSpan.FromMilliseconds(200)) return false;
+        _lastSample = now;
+        return true;
+    }
+
+    private TimeSpan _lastSample = TimeSpan.MinValue;
+
     private void MaintainPanelAudio()
     {
         bool wanted = _ready && Screen.NeedsAudio;

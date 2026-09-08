@@ -268,6 +268,49 @@ public sealed partial class MainWindow
             Console.Out.WriteLine($"[selftest] visualizer FAILED: {ex.GetType().Name}: {ex.Message}");
         }
 
+        // ⛔ A visualizer on a PANEL screen must raise the tick rate. The editor
+        // runs at 250 ms for readouts, which is fine for a number that changes
+        // once a second and useless for audio - a visualizer rendered at 4 fps
+        // looks broken on the strip while every other check still passes. This
+        // asserts the rate actually changes with the screen, in both directions.
+        try
+        {
+            // Measured on the PANEL view: on the music tab a fast tick is correct
+            // whatever the screen holds, so leaving the view wherever the previous
+            // checks left it would assert nothing.
+            string keepView = _view;
+            _view = "panel";
+            MaintainTickRate();
+            var slow = _timer.Interval;
+            Screen.Visualizers.Add(new NexusManager.Render.VisualizerSpec());
+            MaintainTickRate();
+            var fast = _timer.Interval;
+
+            Screen.Visualizers.RemoveAt(Screen.Visualizers.Count - 1);
+            MaintainTickRate();
+            var back = _timer.Interval;
+
+            _view = keepView;
+            MaintainTickRate();
+
+            bool ok = fast.TotalMilliseconds <= 40 && slow.TotalMilliseconds > 100
+                   && back == slow;
+            if (!ok)
+            {
+                failures++;
+                Console.Out.WriteLine($"[selftest] tickrate FAILED: {slow.TotalMilliseconds:0} ms "
+                                    + $"-> {fast.TotalMilliseconds:0} ms -> {back.TotalMilliseconds:0} ms "
+                                    + "(want slow -> <=40 -> slow)");
+            }
+            else Console.Out.WriteLine($"[selftest] tickrate OK ({slow.TotalMilliseconds:0} -> "
+                                     + $"{fast.TotalMilliseconds:0} -> {back.TotalMilliseconds:0} ms)");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.Out.WriteLine($"[selftest] tickrate FAILED: {ex.GetType().Name}: {ex.Message}");
+        }
+
         Console.Out.WriteLine(failures == 0
             ? "[selftest] PASS"
             : $"[selftest] FAIL ({failures})");

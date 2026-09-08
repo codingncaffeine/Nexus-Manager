@@ -223,12 +223,13 @@ public sealed partial class MainWindow
     {
         _capture ??= new AudioCapture(new AnalyserOptions { BandCount = 64 });
         _capture.Start();
-        _timer.Interval = MusicInterval;
+        // The interval is owned by MaintainTickRate, which decides it from the
+        // current view and screen every tick.
     }
 
     private void StopMusic()
     {
-        _timer.Interval = EditorInterval;
+        // Interval restored by MaintainTickRate.
         _capture?.Dispose();
         _capture = null;
     }

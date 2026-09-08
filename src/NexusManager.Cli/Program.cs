@@ -419,7 +419,14 @@ switch (cmd)
 
         {
             int vis = set.Screens.Sum(s => s.Visualizers.Count);
-            Console.WriteLine($"{set.Screens.Count} screen(s) at {set.TargetFps} fps"
+            // Report the rates screens will ACTUALLY run at. Printing the global
+            // value while a visualizer screen renders at 30 states a number that
+            // is not true of every screen.
+            var rates = set.Screens.Select(s => s.EffectiveFps(set.TargetFps))
+                                   .Distinct().OrderBy(r => r).ToList();
+            string fps = rates.Count == 1 ? $"{rates[0]} fps"
+                                          : $"{string.Join("/", rates)} fps by screen";
+            Console.WriteLine($"{set.Screens.Count} screen(s) at {fps}"
                 + (vis > 0 ? $", {vis} visualizer(s) - capturing audio" : "")
                 + ". Swipe to change. Ctrl-C to stop.");
         }

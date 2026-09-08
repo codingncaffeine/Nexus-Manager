@@ -101,7 +101,12 @@ public sealed class Daemon : IDisposable
 
         _dev.SetBrightness(Math.Clamp(_set.Brightness, 0, 100));
 
-        var period = TimeSpan.FromSeconds(1.0 / Math.Clamp(_set.TargetFps, 1, 65));
+        // ⛔ Paced on an ABSOLUTE deadline rather than tick * period, because the
+        // period now varies: a screen carrying a visualizer runs at 30 while the
+        // sensor screens stay at the configured rate. The old formula multiplied
+        // one fixed period by the tick count, so a rate change mid-run would
+        // have skewed every deadline after it.
+        var nextFrame = TimeSpan.Zero;
         var sampleEvery = TimeSpan.FromMilliseconds(Math.Max(50, _set.SampleIntervalMs));
         var sw = Stopwatch.StartNew();
         int fails = 0;
@@ -112,13 +117,17 @@ public sealed class Daemon : IDisposable
         {
             while (!ct.IsCancellationRequested)
             {
-                var wait = TimeSpan.FromTicks(period.Ticks * tick) - sw.Elapsed;
+                var period = TimeSpan.FromSeconds(
+                    1.0 / _set.Screens[_screen].EffectiveFps(_set.TargetFps));
+                var wait = nextFrame - sw.Elapsed;
                 if (wait > TimeSpan.Zero)
                 {
                     try { await Task.Delay(wait, ct).ConfigureAwait(false); }
                     catch (OperationCanceledException) { break; }
                 }
                 tick++;
+                // Never let a slow frame push the deadline into the past and spin.
+                nextFrame = (sw.Elapsed > nextFrame ? sw.Elapsed : nextFrame) + period;
 
                 if (sw.Elapsed >= nextSample)
                 {

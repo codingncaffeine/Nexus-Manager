@@ -113,6 +113,19 @@ public sealed class ScreenSpec
     /// its own unit. The layout reports violations rather than silently rendering
     /// something illegible.
     /// </summary>
+    /// <summary>
+    /// Frame rate for THIS screen, overriding the set's. Null takes the global
+    /// value.
+    ///
+    /// 24 fps is right for a readout that changes once a second and marginal
+    /// for audio transients, so a screen carrying a visualizer wants 30 while
+    /// the sensor screens stay where they are and pay nothing.
+    /// </summary>
+    public int? TargetFps { get; set; }
+
+    public int EffectiveFps(int fallback) =>
+        Math.Clamp(TargetFps ?? (NeedsAudio ? 30 : fallback), 1, 65);
+
     public int MinModuleWidth { get; set; } = 72;
 
     /// <summary>
