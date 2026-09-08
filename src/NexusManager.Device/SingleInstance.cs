@@ -42,6 +42,27 @@ public sealed class SingleInstance : IDisposable
 
     private SingleInstance(FileStream held) => _lock = held;
 
+    /// <summary>
+    /// Where the lock, owner and socket files live.
+    ///
+    /// XDG_RUNTIME_DIR is the right answer and is present in every normal desktop
+    /// session: it is already mode 0700, owned by the user, and cleaned up at
+    /// logout.
+    ///
+    /// ⛔ The fallback under /tmp needs care, because /tmp is world-writable and
+    /// this path is PREDICTABLE. Another local user can create
+    /// `nexus-manager-&lt;name&gt;` first and then own the directory the lock, the
+    /// owner file and the socket are about to be created in. That is not
+    /// theoretical: `File.WriteAllText` on the owner file follows symlinks, so a
+    /// symlink planted at that name is an arbitrary-file-write into anything the
+    /// victim can write, and a squatted socket path makes a second launch talk to
+    /// the attacker instead of to the running instance.
+    ///
+    /// So the directory is created 0700, and its mode is CHECKED afterwards.
+    /// CreateDirectory does not alter an existing directory, so creating with the
+    /// right mode proves nothing on its own - the check is the part that matters.
+    /// A directory that is not exactly 0700 is refused rather than used.
+    /// </summary>
     private static string Dir
     {
         get
@@ -49,31 +70,49 @@ public sealed class SingleInstance : IDisposable
             string? runtime = Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR");
             if (!string.IsNullOrWhiteSpace(runtime) && Directory.Exists(runtime))
                 return runtime;
-            // Falls back per-user rather than to a shared /tmp path, so two users
-            // on one machine do not lock each other out of their own panels.
+
+            // Per-user rather than one shared path, so two users on one machine do
+            // not lock each other out of their own panels.
             string fallback = Path.Combine(Path.GetTempPath(), $"nexus-manager-{Environment.UserName}");
-            Directory.CreateDirectory(fallback);
+            const UnixFileMode Private = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+
+            // Guarded for the analyser: these two calls are Unix-only, and this
+            // whole fallback is a Unix path. On anything else the directory is
+            // used as-is, which is what the previous behaviour was everywhere.
+            if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
+            {
+                Directory.CreateDirectory(fallback);
+                return fallback;
+            }
+
+            if (!Directory.Exists(fallback))
+                Directory.CreateDirectory(fallback, Private);
+
+            UnixFileMode mode = File.GetUnixFileMode(fallback);
+            if (mode != Private)
+                throw new IOException(
+                    $"{fallback} has mode {mode} rather than 0700 and may belong to another user. " +
+                    "Refusing to put the panel lock there. Set XDG_RUNTIME_DIR, or remove that directory.");
+
             return fallback;
         }
     }
-
     private static string LockPath  => Path.Combine(Dir, "nexus-manager.lock");
     private static string OwnerPath => Path.Combine(Dir, "nexus-manager.owner");
     private static string SockPath  => Path.Combine(Dir, "nexus-manager.sock");
 
-    /// <summary>
-    /// Takes ownership of the panel, or returns null if another process has it.
-    /// </summary>
-    /// <param name="role">Recorded for the other process to report, e.g. "editor".</param>
     public static SingleInstance? TryAcquire(string role)
     {
+        string lockPath = LockPath;      // may throw; a configuration fault, not contention
+        string ownerPath = OwnerPath;
+
         try
         {
-            var held = new FileStream(LockPath, FileMode.OpenOrCreate,
+            var held = new FileStream(lockPath, FileMode.OpenOrCreate,
                                       FileAccess.ReadWrite, FileShare.None);
             try
             {
-                File.WriteAllText(OwnerPath, $"{Environment.ProcessId}\n{role}\n");
+                File.WriteAllText(ownerPath, $"{Environment.ProcessId}\n{role}\n");
             }
             catch (Exception) { /* the description is a courtesy, not the lock */ }
             return new SingleInstance(held);
@@ -87,7 +126,6 @@ public sealed class SingleInstance : IDisposable
             return null;
         }
     }
-
     /// <summary>Whoever currently owns the panel, for a message to the user.</summary>
     public static string DescribeHolder()
     {

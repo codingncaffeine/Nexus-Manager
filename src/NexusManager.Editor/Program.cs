@@ -39,7 +39,19 @@ internal static class Program
             // could run beside a live instance. That convenience was mine, and it
             // is exactly how a second app appeared in the user's tray. A
             // diagnostic that needs the app stopped can stop it.
-            App.Instance = SingleInstance.TryAcquire("editor");
+            try
+            {
+                App.Instance = SingleInstance.TryAcquire("editor");
+            }
+            catch (IOException ex)
+            {
+                // The runtime directory is unusable - a configuration fault, not
+                // another instance. Say which, or the user hunts for a process
+                // that does not exist.
+                Console.Error.WriteLine($"Cannot take the panel lock: {ex.Message}");
+                Environment.ExitCode = 2;
+                return;
+            }
             if (App.Instance is null)
             {
                 string holder = SingleInstance.DescribeHolder();

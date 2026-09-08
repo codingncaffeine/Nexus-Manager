@@ -32,13 +32,67 @@ TimeoutStopSec=10
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=read-only
+
+# ⛔ REQUIRED alongside ProtectHome. systemd's ProtectHome= covers
+# /run/user as well as /home and /root, and the single-instance lock lives
+# in $XDG_RUNTIME_DIR. Without this the lock file cannot be opened for
+# writing, TryAcquire treats the IOException as contention, and the
+# service dies reporting "the panel is already being driven by another
+# instance" - naming a process that does not exist. %t is the user
+# runtime directory. Verified: touch under ProtectHome=read-only returns
+# "Read-only file system"; with this line the daemon starts and renders.
+ReadWritePaths=%t
 ProtectSystem=strict
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictNamespaces=true
 RestrictRealtime=true
+# ⛔ MUST stay false. The .NET runtime JITs, which needs pages that are
+# writable and then executable. Setting this true does not harden the
+# service, it stops it starting at all.
 MemoryDenyWriteExecute=false
+
+# --- syscall and architecture surface ---
+SystemCallFilter=@system-service
+# ⛔ NO deny-list on top of @system-service. Adding
+# `~@privileged @resources @obsolete` stops the service booting at all:
+# the .NET runtime needs syscalls in @resources and dies with
+# "Failed to create CoreCLR, HRESULT: 0x8007054F". Found by bisecting
+# with systemd-run -p, not by reading the list.
+SystemCallArchitectures=native
+SystemCallErrorNumber=EPERM
+
+# --- the daemon has no business on a network ---
+# It reads sensors from /sys and /proc and writes to a USB device. The only
+# socket it opens is the AF_UNIX one that arbitrates single-instance
+# ownership of the panel.
+# ⛔ AF_NETLINK is REQUIRED and nothing in this application's own code
+# suggests it: HidSharp enumerates the panel through udev, and
+# udev_monitor_new_from_netlink fails without it. AF_UNIX alone is enough
+# to pass every check and still never find the device.
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+IPAddressDeny=any
+PrivateNetwork=yes
+
+# --- devices: only the two this actually touches ---
+# hidraw is the panel. uinput is how a touch button presses a real key -
+# on Wayland there is no XTEST, so there is no other route. DevicePolicy
+# closed still permits null, zero, full, random, urandom and tty.
+DevicePolicy=closed
+DeviceAllow=char-hidraw rw
+DeviceAllow=/dev/uinput rw
+
+# --- everything else that costs nothing ---
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=yes
+RestrictSUIDSGID=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectProc=invisible
+ProcSubset=all
+UMask=0077
 
 [Install]
 WantedBy=graphical-session.target

@@ -274,7 +274,20 @@ switch (cmd)
         // NOT error - the HID output reports simply interleave - so the sole
         // symptom is the strip flickering between two screens, which is what
         // the user hit by launching the app a second time.
-        using var instance = SingleInstance.TryAcquire("daemon");
+        SingleInstance? instance;
+        try
+        {
+            instance = SingleInstance.TryAcquire("daemon");
+        }
+        catch (IOException ex)
+        {
+            // A configuration fault, not contention. Reported as a sentence
+            // rather than as a stack trace: the message names the directory
+            // and what to do about it, and a core dump names neither.
+            Console.Error.WriteLine($"Cannot take the panel lock: {ex.Message}");
+            return 1;
+        }
+        using var held = instance;
         if (instance is null)
         {
             Console.Error.WriteLine(

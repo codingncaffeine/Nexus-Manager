@@ -178,17 +178,36 @@ public sealed class ActionRunner
         }
     }
 
+    /// <summary>
+    /// Fire and forget.
+    ///
+    /// ⛔ Deliberately does NOT redirect the child's output, and the previous
+    /// version's redirect was wrong twice over. It read stdout to the end and
+    /// THEN stderr, so a child that filled its stderr pipe while the parent was
+    /// blocked on stdout deadlocked both of them. And because ReadToEnd only
+    /// returns when the child closes the pipe, launching a long-lived program -
+    /// a browser, say, which is exactly what a launch button is for - pinned a
+    /// thread-pool thread for as long as that program stayed open.
+    ///
+    /// A launcher has no use for the output. Letting it inherit costs nothing and
+    /// cannot block.
+    /// </summary>
     private static void Start(string file, string[] args)
     {
-        var psi = new ProcessStartInfo(file) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        var psi = new ProcessStartInfo(file) { UseShellExecute = false };
         foreach (string a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi);
-        // Drained and abandoned: not waiting for a launched program to exit is
-        // the whole point, but a child whose pipes fill up would block forever.
-        p?.StandardOutput.ReadToEnd();
-        p?.StandardError.ReadToEnd();
     }
 
+    /// <summary>
+    /// Runs a short command and returns its stdout.
+    ///
+    /// ⛔ Both pipes are drained CONCURRENTLY. Reading one to the end before
+    /// starting on the other is the classic deadlock: the child blocks writing
+    /// into a full stderr buffer, the parent blocks reading an stdout that will
+    /// never close, and the WaitForExit timeout below is never reached because
+    /// execution never gets that far.
+    /// </summary>
     private static string Capture(string file, string[] args)
     {
         var psi = new ProcessStartInfo(file)
@@ -198,9 +217,16 @@ public sealed class ActionRunner
         foreach (string a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi);
         if (p is null) return "";
-        string output = p.StandardOutput.ReadToEnd();
-        p.StandardError.ReadToEnd();
-        p.WaitForExit(3000);
-        return output;
+
+        var stdout = p.StandardOutput.ReadToEndAsync();
+        var stderr = p.StandardError.ReadToEndAsync();
+        if (!p.WaitForExit(3000))
+        {
+            // A tool that will not answer in three seconds is not going to, and
+            // leaving it attached would keep the tasks above alive indefinitely.
+            try { p.Kill(entireProcessTree: true); } catch (Exception) { }
+        }
+        try { Task.WaitAll([stdout, stderr], 1000); } catch (Exception) { }
+        return stdout.IsCompletedSuccessfully ? stdout.Result : "";
     }
 }

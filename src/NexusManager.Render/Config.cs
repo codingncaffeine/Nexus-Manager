@@ -30,13 +30,56 @@ public static class Config
         }
     }
 
+    /// <summary>
+    /// Reads the screen configuration, or null when there is none to read.
+    ///
+    /// ⛔ A malformed file must NEVER take the application down. It used to: a
+    /// truncated or hand-edited screens.json threw straight out of Main and the
+    /// process dumped core, so a single interrupted autosave left the app
+    /// unstartable with no message explaining why.
+    ///
+    /// The broken file is MOVED ASIDE rather than deleted or overwritten. The
+    /// caller falls back to a discovered configuration and then autosaves over
+    /// this path within seconds, so leaving the original in place would destroy
+    /// whatever the user had - which for a hand-built set of screens is the only
+    /// copy they have.
+    /// </summary>
     public static async Task<ScreenSet?> LoadAsync(string? explicitPath)
     {
         string p = explicitPath ?? Path;
         if (!File.Exists(p)) return null;
-        return JsonSerializer.Deserialize<ScreenSet>(await File.ReadAllTextAsync(p), Json);
-    }
 
+        string text;
+        try
+        {
+            text = await File.ReadAllTextAsync(p);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"  cannot read {p}: {ex.Message}");
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<ScreenSet>(text, Json);
+        }
+        catch (JsonException ex)
+        {
+            string aside = $"{p}.corrupt-{DateTime.Now:yyyyMMdd-HHmmss}";
+            try
+            {
+                File.Move(p, aside);
+                Console.Error.WriteLine($"  {p} is not valid JSON ({ex.Message.Trim()})");
+                Console.Error.WriteLine($"  kept a copy at {aside}; starting from a discovered configuration");
+            }
+            catch (Exception moveEx)
+            {
+                Console.Error.WriteLine($"  {p} is not valid JSON and could not be moved aside: {moveEx.Message}");
+            }
+            return null;
+        }
+    }
     public static async Task SaveAsync(ScreenSet set, string? explicitPath)
     {
         string p = explicitPath ?? Path;
