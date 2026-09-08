@@ -164,12 +164,20 @@ else
     systemctl --user daemon-reload
 
     # Nothing else may hold the panel, or a pass/fail here means nothing.
-    # ⛔ ANY instance holds the panel lock, not just a daemon - the tray editor
-    # owns it too, and on a machine where the package is installed and
-    # autostarts that is the normal state. Checking only for a daemon made
-    # this report a FAILURE for a package that was working perfectly.
-    if pgrep -f "nexus-manager(-editor)?( |$)" >/dev/null 2>&1; then
-        echo "  SKIP  another instance holds the panel: $(pgrep -a -f 'nexus-manager(-editor)?( |$)' | head -1 | cut -c1-70)"
+    # ⛔ Match on the process's ACTUAL EXECUTABLE, never on its command line.
+    # `pgrep -f nexus-manager` matches the shell running this script, because
+    # that command line contains the string - the same trap as `pkill -f`. That
+    # made this check SKIP itself, which is quieter and therefore worse than a
+    # false failure. `pgrep -x` is no use either: the name exceeds 15 characters.
+    holder=""
+    for proc in /proc/[0-9]*; do
+        exe=$(readlink "$proc/exe" 2>/dev/null) || continue
+        case "${exe##*/}" in
+            nexus-manager|nexus-manager-editor) holder="$exe"; break ;;
+        esac
+    done
+    if [ -n "$holder" ]; then
+        echo "  SKIP  another instance holds the panel: $holder"
     else
         systemctl --user start "$TESTUNIT.service" >/dev/null 2>&1
         started=0
