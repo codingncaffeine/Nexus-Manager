@@ -67,7 +67,31 @@ public sealed class ButtonRenderer : IDisposable
             float centreY = NexusCanvas.Height / 2f;
             float textY = centreY + _label.Size * 0.36f;
 
-            if (spec.Icon != ButtonIcon.None)
+            // A user image takes precedence over the vector glyph: someone who
+            // supplied artwork meant it to be used.
+            SKBitmap? art = string.IsNullOrWhiteSpace(spec.Image) ? null : ImageFor(spec.Image!);
+
+            if (art is not null && string.IsNullOrEmpty(spec.Label))
+            {
+                // Picture-only: fill the cell. Inset by 2 so the outline still
+                // reads as a button rather than the image having a hard edge.
+                DrawImage(canvas, art, new SKRect(inner.Left + 2, inner.Top + 2,
+                                                 inner.Right - 2, inner.Bottom - 2),
+                          spec.ImageCover);
+            }
+            else if (art is not null)
+            {
+                const float ArtSize = 20f;
+                float artX = inner.Left + 5;
+                DrawImage(canvas, art,
+                    new SKRect(artX, centreY - ArtSize / 2, artX + ArtSize, centreY + ArtSize / 2),
+                    spec.ImageCover);
+                _text.Color = textColor;
+                float room = inner.Right - (artX + ArtSize + 5) - 5;
+                canvas.DrawText(Fit(spec.Label, _label, room),
+                    artX + ArtSize + 5, textY, SKTextAlign.Left, _label, _text);
+            }
+            else if (spec.Icon != ButtonIcon.None)
             {
                 // Icon left, label right of it: stacking them would leave under
                 // 20px for each on a 48px strip.
@@ -94,6 +118,78 @@ public sealed class ButtonRenderer : IDisposable
         }
     }
 
+
+    /// <summary>
+    /// Decoded button images, keyed by path AND last-write time so an edited file
+    /// is picked up without a restart.
+    ///
+    /// ⛔ Cached because decoding is far too slow for a frame budget, and disposed
+    /// on eviction and on Dispose: an SKBitmap wraps native memory the collector
+    /// cannot see, so a cache that only ever grows is a leak with no GC pressure
+    /// behind it.
+    /// </summary>
+    private readonly Dictionary<string, (long Stamp, SKBitmap? Image)> _images = new(StringComparer.Ordinal);
+
+    private SKBitmap? ImageFor(string path)
+    {
+        long stamp;
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists) return Remember(path, 0, null);
+            stamp = info.LastWriteTimeUtc.Ticks;
+        }
+        catch (Exception)
+        {
+            return Remember(path, 0, null);
+        }
+
+        if (_images.TryGetValue(path, out var hit) && hit.Stamp == stamp) return hit.Image;
+
+        SKBitmap? decoded = null;
+        try
+        {
+            using var stream = File.OpenRead(path);
+            decoded = SKBitmap.Decode(stream);
+        }
+        catch (Exception)
+        {
+            // A file that will not decode is remembered as "no image" against its
+            // timestamp, so a broken path is not re-read every single frame.
+            decoded = null;
+        }
+        return Remember(path, stamp, decoded);
+    }
+
+    private SKBitmap? Remember(string path, long stamp, SKBitmap? image)
+    {
+        if (_images.TryGetValue(path, out var old)) old.Image?.Dispose();
+        _images[path] = (stamp, image);
+        return image;
+    }
+
+    /// <summary>Draws an image into <paramref name="into"/>, preserving aspect.</summary>
+    private void DrawImage(SKCanvas canvas, SKBitmap image, SKRect into, bool cover)
+    {
+        if (image.Width <= 0 || image.Height <= 0 || into.Width <= 0 || into.Height <= 0) return;
+
+        float sx = into.Width / image.Width, sy = into.Height / image.Height;
+        float scale = cover ? MathF.Max(sx, sy) : MathF.Min(sx, sy);
+        float w = image.Width * scale, h = image.Height * scale;
+        var dest = new SKRect(into.MidX - w / 2, into.MidY - h / 2,
+                              into.MidX + w / 2, into.MidY + h / 2);
+
+        // Cover overflows the cell by design, so it is clipped to it. Without the
+        // clip a wide image paints straight over the neighbouring buttons.
+        canvas.Save();
+        canvas.ClipRect(into);
+        canvas.DrawBitmap(image, dest, ButtonSampling, _fill);
+        canvas.Restore();
+    }
+
+    private static readonly SKSamplingOptions ButtonSampling =
+        new(SKFilterMode.Linear, SKMipmapMode.Linear);
+
     private static SKColor Blend(SKColor under, SKColor over, float amount)
     {
         byte Mix(byte a, byte b) => (byte)Math.Clamp(a + (b - a) * amount, 0, 255);
@@ -117,6 +213,8 @@ public sealed class ButtonRenderer : IDisposable
     public void Dispose()
     {
         _fill.Dispose(); _stroke.Dispose(); _text.Dispose();
+        foreach (var entry in _images.Values) entry.Image?.Dispose();
+        _images.Clear();
         _label.Dispose(); _face.Dispose();
     }
 }

@@ -35,6 +35,24 @@ public sealed class ButtonSpec
     /// <summary>What pressing it does.</summary>
     public SystemAction Action { get; set; } = new();
 
+    /// <summary>
+    /// A user's own image on the button - Corsair's "drag-and-drop custom
+    /// graphics". An absolute path, or one relative to the config directory.
+    ///
+    /// ⛔ Nothing of Corsair's ships with this project; the image is read from
+    /// the user's own file at run time, exactly as a background is.
+    ///
+    /// With a label the image takes the icon's slot on the left. Without one it
+    /// fills the button, which is what a picture-only button wants and what a
+    /// ~106px cell can actually show.
+    /// </summary>
+    public string? Image { get; set; }
+
+    /// <summary>Cover crops to fill the cell; Contain fits the whole image
+    /// inside it. Contain by default - a cropped icon is usually the wrong
+    /// icon.</summary>
+    public bool ImageCover { get; set; }
+
     /// <summary>A glyph drawn above the label. Reuses the sensor icon shapes, so
     /// a volume button can carry the speaker-ish mark the readouts already use.</summary>
     public ButtonIcon Icon { get; set; } = ButtonIcon.None;
