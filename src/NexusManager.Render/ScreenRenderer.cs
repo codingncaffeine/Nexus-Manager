@@ -85,29 +85,40 @@ public sealed class ScreenRenderer : IDisposable
                     new SKRect(rect.Right - IconSize - 5, 2, rect.Right - 5, 2 + IconSize),
                     tint);
 
-            // Chart runs flush to the bottom edge, full tile width.
+            // Chart. It starts at ChartTop rather than the old 34px, because the
+            // reading now sits BESIDE the label instead of under it and that
+            // whole band is free - which nearly doubles the height a curve has
+            // to move in.
             if (spec.ShowChart && hist is not null)
             {
                 SKColor chart = spec.ChartColor is not null
                     ? Theme.Parse(spec.ChartColor, tint)
                     : _theme.TintChartWithState ? tint : _theme.ChartLineColor;
 
+                var (lo, hi) = ChartRange(hist, spec);
                 Sparkline.Draw(canvas.Canvas, hist,
-                    new SKRect(rect.Left + 3, 34, rect.Right - 3, NexusCanvas.Height),
-                    spec.Min, spec.Max,
+                    new SKRect(rect.Left + 3, ChartTop, rect.Right - 3, NexusCanvas.Height),
+                    lo, hi,
                     chart.WithAlpha(_theme.ChartLineAlpha),
                     _theme.ChartFillAlpha);
             }
 
-            float inner = rect.Width - 12 - (roomForIcon ? IconSize + 4 : 0);
+            // Label and reading share one baseline. The icon keeps its corner,
+            // so the run is budgeted around it.
+            float budget = rect.Width - 12 - (roomForIcon ? IconSize + 4 : 0);
+            float right = rect.Left + 6 + budget;
+            float x = rect.Left + 6;
 
             if (!string.IsNullOrEmpty(spec.Label))
             {
                 _text.Color = spec.LabelColor is not null
                     ? Theme.Parse(spec.LabelColor, _theme.CaptionColor)
                     : _theme.CaptionColor;
-                canvas.Canvas.DrawText(Fit(spec.Label, _label, inner), rect.Left + 6, 11,
-                                       SKTextAlign.Left, _label, _text);
+                // The label yields first: a long sensor name must not push the
+                // number it labels off the cell.
+                string label = Fit(spec.Label, _label, budget * 0.5f);
+                canvas.Canvas.DrawText(label, x, TextBaseline, SKTextAlign.Left, _label, _text);
+                x += _label.MeasureText(label) + 6;
             }
 
             if (spec.ShowValue)
@@ -118,28 +129,27 @@ public sealed class ScreenRenderer : IDisposable
                 string unit = spec.EffectiveUnit;
 
                 var face = _value;
-                if (face.MeasureText(shown) + _unit.MeasureText(unit) + 10 > rect.Width - 12)
+                if (x + face.MeasureText(shown) + _unit.MeasureText(unit) > right)
                     face = _valueCompact;
 
-                float x = rect.Left + 6;
                 _text.Color = tint;
-                canvas.Canvas.DrawText(shown, x, 31, SKTextAlign.Left, face, _text);
+                canvas.Canvas.DrawText(shown, x, TextBaseline, SKTextAlign.Left, face, _text);
                 x += face.MeasureText(shown) + 2;
 
                 if (!string.IsNullOrEmpty(unit))
                 {
                     // Unit takes the value's colour, as iCUE does — not grey.
-                    canvas.Canvas.DrawText(unit, x, 31, SKTextAlign.Left, _unit, _text);
+                    canvas.Canvas.DrawText(unit, x, TextBaseline, SKTextAlign.Left, _unit, _text);
                     x += _unit.MeasureText(unit) + 5;
                 }
 
                 if (_theme.ShowMinMax && hist is { HasRange: true })
                 {
-                    string range = $"\u2193{Round(hist.Min, spec)} \u2191{Round(hist.Max, spec)}";
-                    if (x + _minmax.MeasureText(range) <= rect.Right - 4)
+                    string range = $"↓{Round(hist.Min, spec)} ↑{Round(hist.Max, spec)}";
+                    if (x + _minmax.MeasureText(range) <= right)
                     {
                         _text.Color = _theme.MinMaxColor;
-                        canvas.Canvas.DrawText(range, x, 31, SKTextAlign.Left, _minmax, _text);
+                        canvas.Canvas.DrawText(range, x, TextBaseline, SKTextAlign.Left, _minmax, _text);
                     }
                 }
             }
@@ -156,6 +166,47 @@ public sealed class ScreenRenderer : IDisposable
         // never clipped by a neighbouring chart.
         if (buttons is { Count: > 0 })
             _buttons.Draw(canvas.Canvas, buttons, _theme, pressedButton, elapsed, flashUntil);
+    }
+
+    /// <summary>Baseline shared by a cell's label and its reading. They sit on
+    /// one line so the band underneath belongs to the chart.</summary>
+    private const float TextBaseline = 18f;
+
+    /// <summary>Top of the chart band. Was 34 when the reading had its own row,
+    /// which left a curve 14px to move in on a 48px panel.</summary>
+    private const float ChartTop = 22f;
+
+    /// <summary>
+    /// The value range a chart is drawn against.
+    ///
+    /// ⛔ Auto-ranging follows the WINDOW, never History.Min/Max: those are the
+    /// lifetime extremes, and a chart scaled to them goes permanently flat the
+    /// first time a spike widens them.
+    ///
+    /// The floor is what stops the other failure. A sensor sitting still still
+    /// jitters in its last digit, and stretching that to full height would draw
+    /// a seismograph out of nothing - so the span can never fall below a
+    /// fraction of the configured range, and a still sensor stays visibly still.
+    /// </summary>
+    public static (double Lo, double Hi) ChartRange(History hist, ModuleSpec spec)
+    {
+        if (!spec.AutoScale) return (spec.Min, spec.Max);
+
+        var (lo, hi) = hist.Window();
+        if (double.IsNaN(lo) || double.IsNaN(hi)) return (spec.Min, spec.Max);
+
+        double floor = Math.Abs(spec.Max - spec.Min)
+                       * Math.Clamp(spec.MinSpanFraction, 0.001, 1.0);
+        double span = hi - lo;
+        if (span < floor)
+        {
+            double mid = (lo + hi) / 2;
+            return (mid - floor / 2, mid + floor / 2);
+        }
+        // Headroom, so a peak does not sit exactly on the top edge and read as
+        // clipped when it is merely the highest sample so far.
+        double pad = span * 0.15;
+        return (lo - pad, hi + pad);
     }
 
     private static string Round(double v, ModuleSpec spec) =>

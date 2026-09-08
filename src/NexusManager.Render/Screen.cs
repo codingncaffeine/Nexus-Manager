@@ -45,6 +45,31 @@ public sealed class ModuleSpec
     public string? LabelColor { get; set; }
 
     public bool ShowChart { get; set; } = true;
+
+    /// <summary>
+    /// Range the CHART follows the data instead of the fixed Min/Max above.
+    ///
+    /// ⛔ This reverses an earlier decision, and the earlier reasoning was not
+    /// wrong so much as incomplete. Fixed scale was chosen so that a CPU idling
+    /// between 3% and 5% could not look like one swinging 0-100%: magnitude is
+    /// the point when monitoring. True — but on a 48px strip a drive moving
+    /// 36.8 to 37.1 degrees inside a 20-95 range moves ONE FIFTH OF A PIXEL, so
+    /// every chart was a flat line and told the user nothing at all.
+    ///
+    /// Measured against iCUE: a tile stating min 41 / max 45 - four degrees -
+    /// has a curve travelling THIRTEEN pixels. On a fixed 20-95 scale those four
+    /// degrees are 1.4px. iCUE auto-ranges, and that is why its charts have
+    /// shape. Magnitude is not lost either: the reading and its min/max are
+    /// printed right beside the chart.
+    /// </summary>
+    public bool AutoScale { get; set; } = true;
+
+    /// <summary>
+    /// Floor on the auto-ranged span, as a fraction of Max-Min. Without it a
+    /// perfectly still sensor would have its last digit of noise stretched to
+    /// full height and the chart would look like a seismograph.
+    /// </summary>
+    public double MinSpanFraction { get; set; } = 0.06;
     public bool ShowValue { get; set; } = true;
     public bool ShowDevice { get; set; }
 

@@ -208,9 +208,15 @@ switch (cmd)
         var phist = pmods.Select(l => new History(Math.Max(2, (int)l.Rect.Width))).ToList();
         // A few samples so charts are not empty, which would make a screen look
         // broken rather than new.
-        for (int s = 0; s < 8; s++)
+        // Enough samples to fill the widest chart. With 8 the sparkline came out
+        // EIGHT PIXELS wide at the right edge of its cell, so the preview could
+        // not show what a chart looks like at all - which is most of what the
+        // preview exists for. Only the first few are real reads; the rest repeat
+        // the last value, because Read without a fresh Sample returns it.
+        int seedCount = pmods.Count == 0 ? 8 : Math.Max(8, (int)pmods.Max(l => l.Rect.Width));
+        for (int s = 0; s < seedCount; s++)
         {
-            reg.Sample();
+            if (s < 8) reg.Sample();
             for (int i = 0; i < pmods.Count; i++)
             {
                 double v = reg.Read(pmods[i].Spec.Source);

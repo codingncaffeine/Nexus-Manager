@@ -48,11 +48,34 @@ public static class Sparkline
             area.LineTo(rect.Right, rect.Bottom);
             area.Close();
             using var areaPath = area.Detach();
+
+            // ⛔ A VERTICAL GRADIENT, not a flat wash - and anchored to the PLOT
+            // AREA rather than to the curve. Measured off
+            // _reference/icue/icue_dashboard_001: solving for alpha per channel
+            // at one row of the blue fan chart against SensorPalette's #3B9AE1
+            // gives red 20/45, green 62/140, blue 94/211 - 0.444 on all three,
+            // agreeing to within 1%. So the fill IS the sensor colour, and only
+            // its alpha varies. That alpha is linear in height above the
+            // BASELINE, not above the curve: two rows up it predicts 0.074 and
+            // measures 0.066-0.079, and the same curve at two different heights
+            // in the same chart carries different alpha at its own top edge.
+            //
+            // The stops are the "three colours" this reads as: a full-strength
+            // line, a strong fill under it, and a fade to nothing at the axis.
+            using var shader = SKShader.CreateLinearGradient(
+                new SKPoint(rect.Left, rect.Top),
+                new SKPoint(rect.Left, rect.Bottom),
+                [line.WithAlpha(fillAlpha), line.WithAlpha(0)],
+                [0f, 1f],
+                SKShaderTileMode.Clamp);
+            // ⛔ Disposed, like every native Skia handle here: an undisposed
+            // shader leaks with no GC pressure at all, and this allocates once
+            // per module per frame.
             using var fill = new SKPaint
             {
                 IsAntialias = true,
                 Style = SKPaintStyle.Fill,
-                Color = line.WithAlpha(fillAlpha),
+                Shader = shader,
             };
             canvas.DrawPath(areaPath, fill);
         }

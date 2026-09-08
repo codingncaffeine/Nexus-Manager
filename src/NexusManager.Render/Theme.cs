@@ -27,9 +27,9 @@ public sealed class Theme
     public string Hot  { get; set; } = "#FF463C";
 
     /// <summary>0-255. Opacity of the filled area under the chart line.</summary>
-    public byte ChartFillAlpha { get; set; } = 48;
+    public byte ChartFillAlpha { get; set; } = 166;
     /// <summary>0-255. Chart lines sit behind the numbers, so usually below 255.</summary>
-    public byte ChartLineAlpha { get; set; } = 150;
+    public byte ChartLineAlpha { get; set; } = 255;
 
     public float CaptionSize { get; set; } = 12f;
     public float ValueSize   { get; set; } = 22f;

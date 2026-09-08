@@ -17,6 +17,28 @@ public sealed class History
     public double Max { get; private set; } = double.NegativeInfinity;
     public bool HasRange => Count > 0 && !double.IsInfinity(Min);
 
+    /// <summary>
+    /// Lowest and highest across the samples actually HELD — the visible window,
+    /// not the lifetime extremes above.
+    ///
+    /// ⛔ These are different things and the distinction is the whole point.
+    /// Min/Max are since tracking began, which is what belongs beside the
+    /// reading. A chart auto-ranging to those would go flat again the moment one
+    /// spike widened them permanently; it has to follow what is on screen.
+    /// </summary>
+    public (double Lo, double Hi) Window()
+    {
+        if (Count == 0) return (double.NaN, double.NaN);
+        double lo = double.PositiveInfinity, hi = double.NegativeInfinity;
+        for (int i = 0; i < Count; i++)
+        {
+            double v = _samples[i];
+            if (v < lo) lo = v;
+            if (v > hi) hi = v;
+        }
+        return (lo, hi);
+    }
+
     public int Capacity => _samples.Length;
     public int Count { get; private set; }
 

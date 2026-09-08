@@ -186,6 +186,53 @@ public sealed partial class MainWindow
             Console.Out.WriteLine($"[selftest] itemtemplate FAILED: {ex.GetType().Name}: {ex.Message}");
         }
 
+
+        // ⛔ Auto-ranging has two failure modes and both are silent, so both are
+        // pinned here: a chart that stays flat because it scaled to lifetime
+        // extremes, and a chart that turns a still sensor's last-digit jitter
+        // into a seismograph.
+        try
+        {
+            var spec = new NexusManager.Render.ModuleSpec { Min = 20, Max = 95 };
+
+            // A sensor that moved 41 -> 45 must produce a span near four degrees,
+            // not the 75 of the configured range.
+            var moving = new NexusManager.Render.History(16);
+            foreach (double v in new[] { 41d, 43, 45, 44, 42, 43, 44, 45 }) moving.Add(v);
+            var (mLo, mHi) = NexusManager.Render.ScreenRenderer.ChartRange(moving, spec);
+            double mSpan = mHi - mLo;
+
+            // A still sensor must NOT be stretched: its span is held at the floor.
+            var still = new NexusManager.Render.History(16);
+            foreach (double v in new[] { 36.85, 36.85, 36.86, 36.85, 36.85 }) still.Add(v);
+            var (sLo, sHi) = NexusManager.Render.ScreenRenderer.ChartRange(still, spec);
+            double sSpan = sHi - sLo;
+            double floor = (95 - 20) * spec.MinSpanFraction;
+
+            // And the lifetime extremes must NOT be what it follows: one spike
+            // in the past cannot be allowed to flatten the present.
+            var spiked = new NexusManager.Render.History(4);
+            spiked.Add(90); spiked.Add(41); spiked.Add(42); spiked.Add(43); spiked.Add(44);
+            var (kLo, kHi) = NexusManager.Render.ScreenRenderer.ChartRange(spiked, spec);
+
+            bool ok = mSpan > 4 && mSpan < 12
+                      && Math.Abs(sSpan - floor) < 0.01
+                      && kHi < 60;
+            if (!ok)
+            {
+                failures++;
+                Console.Out.WriteLine(
+                    $"[selftest] chartrange FAILED: moving span {mSpan:0.00} (want 4-12), "
+                    + $"still span {sSpan:0.00} (want {floor:0.00}), spiked hi {kHi:0.0} (want < 60)");
+            }
+            else Console.Out.WriteLine("[selftest] chartrange OK");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.Out.WriteLine($"[selftest] chartrange FAILED: {ex.GetType().Name}: {ex.Message}");
+        }
+
         Console.Out.WriteLine(failures == 0
             ? "[selftest] PASS"
             : $"[selftest] FAIL ({failures})");
