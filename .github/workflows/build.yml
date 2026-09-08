@@ -52,6 +52,13 @@ jobs:
       - name: DSP self-test
         run: ./src/NexusManager.Cli/bin/Release/net10.0/nexus-manager visualizer --selftest
 
+      # Builds a synthetic .cuescreens pack and asserts it round-trips. Guards
+      # the cereal behaviour that produced three separate importer faults, each
+      # of which looked like success. The real packs are Corsair's and cannot
+      # be committed, so the fixture is generated.
+      - name: Import self-test
+        run: ./src/NexusManager.Cli/bin/Release/net10.0/nexus-manager import --selftest
+
       - name: Sensor discovery
         run: ./src/NexusManager.Cli/bin/Release/net10.0/nexus-manager sensors
 

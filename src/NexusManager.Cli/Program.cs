@@ -139,6 +139,11 @@ switch (cmd)
 
     case "import":
     {
+        if (args.Contains("--selftest")) return ImportSelfTest.Run();
+    }
+    goto case "import-run";
+    case "import-run":
+    {
         string? pack = args.Length > 1 && !args[1].StartsWith('-') ? args[1] : null;
         if (pack is null || !File.Exists(pack))
         {
