@@ -71,16 +71,37 @@ if [ -d "$OUT/publish" ]; then
         ok "built assemblies carry only the project identity"
     fi
 
-    # --- 3. the account name, anywhere in the artifacts --------------------
-    # Whole tree this time, because a leaked build path is ours whichever file
-    # it landed in.
-    hits=$(grep -ral -e "$ACCOUNT" -e "$HOMEDIR" "$OUT/publish" 2>/dev/null || true)
+    # --- 3. build paths in the artifacts -----------------------------------
+    # ⛔ THE ACCOUNT NAME IS MATCHED ONLY AS A PATH SEGMENT. Matching it as a
+    # bare word fires on correct work: on a GitHub runner the account is
+    # literally "runner", a word that occurs inside
+    # System.Text.RegularExpressions.dll and in our own assemblies, and this
+    # check failed a build that had no leak in it at all. A check that goes
+    # red on correct work is one that gets switched off, so it is made
+    # precise rather than silenced.
+    hits=$(grep -ral -e "/$ACCOUNT/" -e "$HOMEDIR/" "$OUT/publish" 2>/dev/null || true)
     if [ -n "$hits" ]; then
-        bad "the build account name or home directory is baked into:"
+        bad "the build account's path is baked into:"
         printf '  %s\n' $hits >&2
         bad "(check <PathMap> in Directory.Build.props)"
     else
-        ok "no build path or account name in the artifacts"
+        ok "no build path for this account in the artifacts"
+    fi
+
+    # And the account-INDEPENDENT half, which is the one that generalises: any
+    # absolute home-shaped path inside the assemblies this repository compiles.
+    # It catches a leak from a machine whose account name we never knew, and it
+    # is what PathMap exists to prevent.
+    leaked=$(find "$OUT/publish" -maxdepth 1 \( -name 'NexusManager*.dll' -o -name 'nexus-manager' \
+                 -o -name 'nexus-manager-editor' -o -name 'nexus-manager*.dll' \) -print0 \
+             | xargs -0 grep -haoE '(/home|/root|/Users|/run/media)/[A-Za-z0-9._-]+/' 2>/dev/null \
+             | sort -u || true)
+    if [ -n "$leaked" ]; then
+        bad "an assembly we build carries an absolute build path:"
+        printf '  %s\n' $leaked >&2
+        bad "(check <PathMap> in Directory.Build.props)"
+    else
+        ok "no absolute build paths in the assemblies we compile"
     fi
 else
     ok "no publish tree yet - artifact checks skipped"
