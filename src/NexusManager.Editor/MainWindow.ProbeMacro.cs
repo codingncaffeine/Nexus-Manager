@@ -183,6 +183,45 @@ public sealed partial class MainWindow
                   idle ? "a second press started a second run"
                        : "the runner still reported a finished macro as running");
 
+
+            // --- 8. a tab round trip, WITH THE DIALOG ROOTED ---------------------
+            // ⛔ This is the check that was missing, and its absence cost a crash
+            // in the user's hands. The self test switched tabs on an UNROOTED
+            // dialog and passed: an unrooted control does not apply its template
+            // the same way, so the ScrollViewer never adopted the row panel and
+            // the second one never collided with the first. The dialog has to be
+            // SHOWN for this to mean anything - the same lesson as probing a
+            // control theme on an unrooted control, which also reported a false
+            // result here once.
+            var tabbed = MacroEditorWindow.ForTest(Sample(), _actions);
+            string tabError = "";
+            object? firstBody = null, secondBody = null;
+            try
+            {
+                tabbed.Show();
+                tabbed.UpdateLayout();
+                Dispatcher.UIThread.RunJobs(DispatcherPriority.Loaded);
+                firstBody = tabbed.TabBody;
+                tabbed.SelectTab(1);
+                tabbed.UpdateLayout();
+                Dispatcher.UIThread.RunJobs(DispatcherPriority.Loaded);
+                tabbed.SelectTab(0);
+                tabbed.UpdateLayout();
+                Dispatcher.UIThread.RunJobs(DispatcherPriority.Loaded);
+                secondBody = tabbed.TabBody;
+            }
+            catch (Exception ex) { tabError = $"{ex.GetType().Name}: {ex.Message}"; }
+            int afterTrip = tabbed.Rows.Count;
+            try { tabbed.Close(); } catch (Exception) { }
+
+            Check("tab trip", tabError.Length == 0 && afterTrip == 3,
+                  tabError.Length > 0 ? tabError : $"Events -> General -> Events, {afterTrip} rows intact");
+            // The structural rule behind it, asserted directly so a future
+            // rebuild of the tab body is caught without needing a window: the
+            // row panel has exactly ONE owner for the life of the dialog.
+            Check("tab identity", firstBody is not null && ReferenceEquals(firstBody, secondBody),
+                  "the Events body is the same control after a round trip");
+
             // --- put the config back exactly as it was ---------------------------
             if (temporary) _set.Screens[si].Buttons.RemoveAt(_btnIndex);
             else

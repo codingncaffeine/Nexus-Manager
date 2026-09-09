@@ -359,16 +359,31 @@ public sealed partial class MainWindow
             var dialog = MacroEditorWindow.ForTest(spec, _actions);
             (dialog.Content as Control)?.Measure(new Avalonia.Size(640, 560));
             int rows = dialog.Rows.Count;
+
+            // ⛔ THE ROUND TRIP ALONE PROVED NOTHING AND THIS CHECK SHIPPED
+            // GREEN AGAINST A DIALOG THAT KILLED THE APPLICATION. Switching
+            // tabs used to REBUILD the Events body, which wrapped the same
+            // field-held row panel in a second ScrollViewer - two visual
+            // parents, and a crash on the next layout pass. Unrooted, the
+            // template never applies the same way, so the collision never
+            // happened here while it happened every time in the user's hands.
+            //
+            // The structural rule is what is asserted now, and it does not
+            // need a window: ONE body control, re-parented, never rebuilt.
+            // --probe-macro carries the rooted reproduction.
+            object? firstBody = dialog.TabBody;
             dialog.SelectTab(1);                       // the General tab must build too
             (dialog.Content as Control)?.Measure(new Avalonia.Size(640, 560));
             dialog.SelectTab(0);
             (dialog.Content as Control)?.Measure(new Avalonia.Size(640, 560));
+            bool sameBody = firstBody is not null && ReferenceEquals(firstBody, dialog.TabBody);
 
-            if (rows != 3 || dialog.Rows.Count != 3)
+            if (rows != 3 || dialog.Rows.Count != 3 || !sameBody)
             {
                 failures++;
                 Console.Out.WriteLine($"[selftest] macro      FAILED: 3 steps drew {rows} row(s), "
-                                    + $"{dialog.Rows.Count} after a tab round trip");
+                                    + $"{dialog.Rows.Count} after a tab round trip, "
+                                    + $"same body={sameBody} (want True)");
             }
             else Console.Out.WriteLine("[selftest] macro      OK");
         }

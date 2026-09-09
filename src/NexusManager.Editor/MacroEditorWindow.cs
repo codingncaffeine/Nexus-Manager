@@ -53,6 +53,10 @@ public sealed class MacroEditorWindow : Window
     private readonly StackPanel _rows = new();
     private readonly ContentControl _tabHeader = new();
     private readonly ContentControl _tabBody = new();
+    /// <summary>Built once each. See ShowTab - rebuilding the Events body gave
+    /// the row panel a second visual parent and crashed the application.</summary>
+    private Control? _eventsTab;
+    private Control? _generalTab;
     private readonly TextBlock _status;
     private readonly Button _test;
     private bool _testing;
@@ -181,11 +185,30 @@ public sealed class MacroEditorWindow : Window
         };
     }
 
+    /// <summary>
+    /// Swaps the tab body.
+    ///
+    /// ⛔ EACH BODY IS BUILT ONCE AND CACHED, and that is not an optimisation.
+    /// `_rows` is a field, so rebuilding the Events tab wrapped the SAME
+    /// StackPanel in a SECOND ScrollViewer - and a control cannot have two
+    /// visual parents. Going Events -> General -> Events therefore killed the
+    /// application on the next layout pass:
+    ///
+    ///   The control StackPanel already has a visual parent
+    ///   ScrollContentPresenter ... while trying to add it as a child of
+    ///   ScrollContentPresenter ...
+    ///
+    /// This is the same double-parent crash the Panel tab shipped with once.
+    /// Re-parenting a CACHED control back into the same ContentControl is the
+    /// normal path and is fine; building a second owner for a field is not.
+    /// </summary>
     private void ShowTab()
     {
         _tabHeader.Content = MacroStyle.Segmented(
             ["Events", "General"], _tab, i => { _tab = i; ShowTab(); });
-        _tabBody.Content = _tab == 0 ? BuildEvents() : BuildGeneral();
+        _tabBody.Content = _tab == 0
+            ? _eventsTab ??= BuildEvents()
+            : _generalTab ??= BuildGeneral();
         if (_tab == 0) RebuildRows();
     }
 
@@ -580,6 +603,10 @@ public sealed class MacroEditorWindow : Window
 
     /// <summary>The macro under edit, for a probe to compare against.</summary>
     public MacroSpec Editing => _macro;
+
+    /// <summary>The control currently in the tab body, so a probe can assert it
+    /// is the SAME one after a round trip rather than a rebuilt copy.</summary>
+    public Control? TabBody => _tabBody.Content as Control;
 
     /// <summary>Drives the tab strip from a probe.</summary>
     public void SelectTab(int tab) { _tab = tab; ShowTab(); }
