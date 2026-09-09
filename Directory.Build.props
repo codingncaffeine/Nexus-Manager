@@ -12,7 +12,7 @@
     <!-- Single source of truth for the shipped version. packaging/build-release.sh
          reads VersionPrefix out of this file, so the tag, the .deb metadata, the
          tarball name and the PKGBUILD cannot drift apart from the binaries. -->
-    <VersionPrefix>0.0.5</VersionPrefix>
+    <VersionPrefix>0.0.6</VersionPrefix>
 
     <!-- ⛔ Without this every assembly embeds the ABSOLUTE path it was built
          from - the .pdb reference alone leaks the developer's username and

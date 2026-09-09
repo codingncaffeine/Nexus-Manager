@@ -187,6 +187,20 @@ rm -rf "$DEB" "$ROOT"
 # and confirm the bytes match what was published.
 ( cd "$OUT" && sha256sum nexus-manager-*.tar.gz nexus-manager*.deb > SHA256SUMS )
 
+
+# ⛔ THE RELEASE GATE. This project is published pseudonymously, and an address
+# or a build path baked into an artifact cannot be recalled once it is on a
+# release page or in the AUR. The audit works from an ALLOW-LIST of the two
+# approved noreply addresses plus the account name read from the system, so it
+# catches an address nobody thought to look for - and so that the script itself
+# carries none of what it is guarding against.
+#
+# It is called from HERE, rather than left as a step to remember, because a
+# check that has to be remembered is a check that gets skipped on the release
+# that needed it. set -e makes a failure stop the build.
+echo "== identity audit"
+bash packaging/identity-audit.sh "${RELEASE_RANGE:-}"
+
 echo "== artifacts:"
 ls -sh1 "$OUT" | grep -v publish
 echo "== sha256 (for packaging/aur/PKGBUILD):"

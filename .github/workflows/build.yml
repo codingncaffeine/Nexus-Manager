@@ -26,6 +26,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+
+      # ⛔ FIRST, and on every push, not only at release time. This project is
+      # published pseudonymously and an address or a build path that reaches a
+      # release page or the AUR cannot be recalled. packaging/build-release.sh
+      # calls the same script as its release gate; running it here as well means
+      # a commit made with the wrong git identity is caught on the push that
+      # made it, rather than on the release three weeks later.
+      #
+      # HEAD rather than a range: checkout is shallow, so this audits the tip
+      # commit. The full history was audited clean separately.
+      - name: Identity audit
+        run: bash packaging/identity-audit.sh HEAD
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
