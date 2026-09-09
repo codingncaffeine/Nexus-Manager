@@ -222,6 +222,19 @@ public sealed class ActionRunner
                 // machine - the desktop behaves as though Ctrl is stuck and
                 // nothing explains why.
                 if (held.Count > 0) _keyboard.ReleaseAll(held);
+
+                // ⛔ AND the run has to be marked FINISHED, or the toggle at the
+                // top of this method never lets another one start. _macroCts was
+                // left non-null and un-cancelled after a normal finish, so the
+                // "already running, so stop it" branch swallowed the NEXT press:
+                // on the panel a macro button worked on every OTHER tap, with
+                // nothing logged and nothing to see. Cleared BEFORE the task
+                // completes, so a caller that awaits MacroCompletion and then
+                // reads MacroRunning is told the truth.
+                lock (_macroGate)
+                {
+                    if (ReferenceEquals(_macroCts, cts)) { _macroCts = null; cts.Dispose(); }
+                }
                 done.TrySetResult();
             }
         }, CancellationToken.None);
