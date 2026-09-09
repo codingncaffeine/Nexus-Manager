@@ -205,14 +205,28 @@ public sealed partial class MainWindow
                 }));
                 _themeProps.Children.Add(Accent("Edit macro…", async () =>
                 {
-                    var edited = await MacroEditorWindow.EditAsync(
-                        this, b.Action.Macro, _actions, b.Label);
-                    if (edited is null) return;      // Cancel changes nothing
-                    b.Action.Macro = edited;
-                    Changed();
-                    // Rebuilds the summary AND the Buttons list, so the entry
-                    // stops reading "macro (empty)" the moment it is not.
-                    RefreshThemePanel();
+                    // ⛔ Caught and REPORTED. This runs from an async click
+                    // handler, so an exception here is unobserved: no crash, no
+                    // log, the button simply does nothing when pressed - which
+                    // is indistinguishable from the defect this whole dialog
+                    // exists to close.
+                    try
+                    {
+                        var edited = await MacroEditorWindow.EditAsync(
+                            this, b.Action.Macro, _actions, b.Label);
+                        if (edited is null) return;      // Cancel changes nothing
+                        b.Action.Macro = edited;
+                        Changed();
+                        // Rebuilds the summary AND the Buttons list, so the
+                        // entry stops reading "macro (empty)" the moment it
+                        // is not.
+                        RefreshThemePanel();
+                    }
+                    catch (Exception ex)
+                    {
+                        _status.Text = $"macro editor: {ex.Message}";
+                        Console.Error.WriteLine($"[macro] {ex}");
+                    }
                 }));
                 _themeProps.Children.Add(Style.Note(
                     "An ordered list of key presses, releases and waits, sent through "
