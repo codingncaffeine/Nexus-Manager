@@ -65,6 +65,16 @@ jobs:
           xvfb-run -a ./src/NexusManager.Editor/bin/Release/net10.0/nexus-manager-editor \
             --probe-visualizer || test $? -eq 2
 
+      # ⛔ The macro editor's model, runner and importer all worked for a day
+      # while there was no case for Macro in the Action switch, so from inside
+      # the application the feature did not exist. This probe asserts the ROUTE
+      # as well as the rendering, and every check in it carries a negative
+      # control that is run and reported.
+      - name: Editor macro probe
+        run: |
+          xvfb-run -a ./src/NexusManager.Editor/bin/Release/net10.0/nexus-manager-editor \
+            --probe-macro
+
       - name: Import self-test
         run: ./src/NexusManager.Cli/bin/Release/net10.0/nexus-manager import --selftest
 

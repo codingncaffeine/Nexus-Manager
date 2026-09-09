@@ -239,6 +239,7 @@ public sealed partial class MainWindow : Window
         if (App.ProbeDrag) { Stage("probe"); RunDragProbe(); return; }
         if (App.ProbeAction) { Stage("probe-action"); _ = RunActionProbe(); return; }
         if (App.ProbeVisualizer) { Stage("probe-visualizer"); _ = RunVisualizerProbe(); return; }
+        if (App.ProbeMacro) { Stage("probe-macro"); _ = RunMacroProbe(); return; }
         if (App.SelfTest) { Stage("selftest"); RunSelfTest(); return; }
         Stage("ready");
     }

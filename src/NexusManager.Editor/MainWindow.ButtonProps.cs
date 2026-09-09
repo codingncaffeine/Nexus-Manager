@@ -184,8 +184,64 @@ public sealed partial class MainWindow
                     "A key name, or several joined with + for a chord, e.g. ctrl+alt+t. "
                     + "Sent through a virtual keyboard, which is the only way on Wayland."));
                 break;
+
+            // ⛔ THE DEFECT THIS CLOSES. There was no case here at all, so
+            // choosing Macro changed the kind, reset Target, and then rendered
+            // NOTHING - the model, the runner and the .cuescreens importer all
+            // worked and there was simply no way in. Everything below has to
+            // appear the MOMENT Macro is selected, with no scrolling and no
+            // second click: a dialog nobody can reach is worth nothing.
+            case ActionKind.Macro:
+            {
+                var macro = b.Action.Macro;
+                _themeProps.Children.Add(Row("Steps", new TextBlock
+                {
+                    Text = Summarise(macro),
+                    Foreground = macro is null || macro.Steps.Count == 0
+                        ? Style.TextDimBrush : Style.TextMidBrush,
+                    FontSize = 11,
+                    TextWrapping = TextWrapping.Wrap,
+                    VerticalAlignment = VerticalAlignment.Center,
+                }));
+                _themeProps.Children.Add(Accent("Edit macro…", async () =>
+                {
+                    var edited = await MacroEditorWindow.EditAsync(
+                        this, b.Action.Macro, _actions, b.Label);
+                    if (edited is null) return;      // Cancel changes nothing
+                    b.Action.Macro = edited;
+                    Changed();
+                    // Rebuilds the summary AND the Buttons list, so the entry
+                    // stops reading "macro (empty)" the moment it is not.
+                    RefreshThemePanel();
+                }));
+                _themeProps.Children.Add(Style.Note(
+                    "An ordered list of key presses, releases and waits, sent through "
+                    + "the same virtual keyboard as a single key."));
+                break;
+            }
         }
 
+    }
+
+    /// <summary>
+    /// The Does summary for a macro: enough of the sequence to recognise it.
+    ///
+    /// ⛔ An empty macro must READ as empty. A button with Kind = Macro and no
+    /// steps runs nothing at all, and a summary that said "macro" would look
+    /// exactly like one that worked.
+    /// </summary>
+    private static string Summarise(MacroSpec? macro)
+    {
+        if (macro is null || macro.Steps.Count == 0) return "no events yet";
+        const int show = 4;
+        string head = string.Join("  ·  ", macro.Steps.Take(show).Select(s => s.ToString()));
+        if (macro.Steps.Count > show) head += $"  ·  +{macro.Steps.Count - show} more";
+        return macro.Repeat switch
+        {
+            MacroRepeat.Count => $"{head}   (x{macro.RepeatCount})",
+            MacroRepeat.UntilPressedAgain => $"{head}   (until pressed again)",
+            _ => head,
+        };
     }
 
     /// <summary>A dropdown over a fixed set of strings.</summary>

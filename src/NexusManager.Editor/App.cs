@@ -38,6 +38,24 @@ public sealed class App : Application
     public static bool ProbeDrag { get; set; }
     public static bool ProbeVisualizer { get; set; }
 
+    /// <summary>
+    /// True for diagnostics that must leave the user's configuration exactly as
+    /// they found it. Autosave is suppressed for the whole run; see
+    /// MainWindow.QueueAutosave. ⛔ --probe-action is NOT in this set, because
+    /// whether an edit reaches the file is precisely what it measures.
+    /// </summary>
+    public static bool ReadOnly { get; set; }
+
+    /// <summary>Measure whether the macro editor renders, commits, and can be
+    /// REACHED from the Action dropdown (--probe-macro). The last of those is
+    /// what was actually broken.</summary>
+    public static bool ProbeMacro { get; set; }
+
+    /// <summary>An optional .cuescreens pack to render a real imported macro
+    /// from. The official packs live outside the repository, so this is never
+    /// required - the probe builds the same shapes in code.</summary>
+    public static string? ProbeMacroPack { get; set; }
+
     /// <summary>Measure whether a button's action edit reaches the model and the
     /// file (--probe-action). Answers the last open question about the Volume
     /// buttons with a measurement rather than by reading the wiring.</summary>
@@ -104,6 +122,23 @@ public sealed class App : Application
                                        .Template().OfType<ContentPresenter>().Name("PART_HeaderPresenter"));
         normal.Setters.Add(new Setter(TextBlock.ForegroundProperty, Style.MenuTextBrush));
         Styles.Add(normal);
+
+        // A greyed entry has to READ as greyed on a WHITE card. Fluent's
+        // disabled foreground is tuned for a dark menu and lands nearly
+        // invisible here, which would make "Paste Below" with an empty
+        // clipboard look like an entry that just does nothing when clicked.
+        var off = new AvStyle(x => x.OfType<FlyoutPresenter>().Class("icue-menu")
+                                    .Descendant().OfType<MenuItem>().Class(":disabled"));
+        off.Setters.Add(new Setter(TemplatedControl.ForegroundProperty,
+            new SolidColorBrush(Color.FromRgb(0xA8, 0xA8, 0xA8))));
+        Styles.Add(off);
+
+        var offHeader = new AvStyle(x => x.OfType<FlyoutPresenter>().Class("icue-menu")
+                                          .Descendant().OfType<MenuItem>().Class(":disabled")
+                                          .Template().OfType<ContentPresenter>().Name("PART_HeaderPresenter"));
+        offHeader.Setters.Add(new Setter(TextBlock.ForegroundProperty,
+            new SolidColorBrush(Color.FromRgb(0xA8, 0xA8, 0xA8))));
+        Styles.Add(offHeader);
     }
 
     public override void OnFrameworkInitializationCompleted()

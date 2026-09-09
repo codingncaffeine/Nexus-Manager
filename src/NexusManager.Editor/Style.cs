@@ -147,4 +147,228 @@ public static class Style
         flyout.FlyoutPresenterClasses.Add("icue-menu");
         return flyout;
     }
+
+    /// <summary>
+    /// One entry in a menu that carries an accelerator column, or is greyed.
+    ///
+    /// iCUE's row menu shows `Ctrl+C` and `Del` right-aligned beside the verb,
+    /// and greys the two Paste entries when the clipboard is empty - which is
+    /// how the menu says "there is nothing to paste" without a dialog.
+    /// </summary>
+    public readonly record struct MenuEntry(
+        string Header, Action? OnClick, string? Accel = null, bool Enabled = true)
+    {
+        /// <summary>A separator row.</summary>
+        public static readonly MenuEntry Separator = new("-", null);
+    }
+
+    /// <summary>
+    /// The same white iCUE popup, with an accelerator column and per-entry
+    /// enabling.
+    ///
+    /// The accelerator is rendered as part of the header rather than through
+    /// MenuItem.InputGesture: the gesture text is drawn by a named part of
+    /// Fluent's template whose foreground is tuned for a DARK menu, and it
+    /// would land near-white on this white card. Building the two-column
+    /// header here depends on no template part at all.
+    /// </summary>
+    public static MenuFlyout Menu(params MenuEntry[] items)
+    {
+        var flyout = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedLeft };
+        foreach (var entry in items)
+        {
+            if (entry.Header == "-") { flyout.Items.Add(new Separator()); continue; }
+
+            // MinWidth rather than a stretch alignment on the MenuItem: the
+            // header presenter sizes to its content, so without a floor the
+            // accelerator would sit hard against the verb instead of in a
+            // column of its own.
+            var header = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+                MinWidth = 148,
+            };
+            var verb = new TextBlock
+            {
+                Text = entry.Header,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            Grid.SetColumn(verb, 0);
+            header.Children.Add(verb);
+            if (!string.IsNullOrEmpty(entry.Accel))
+            {
+                var accel = new TextBlock
+                {
+                    Text = entry.Accel,
+                    Opacity = 0.55,
+                    Margin = new Thickness(28, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                Grid.SetColumn(accel, 1);
+                header.Children.Add(accel);
+            }
+
+            var item = new MenuItem
+            {
+                Header = header,
+                Foreground = MenuTextBrush,
+                Background = Brushes.Transparent,
+                FontSize = 13,
+                Padding = new Thickness(10, 7, 22, 7),
+                IsEnabled = entry.Enabled,
+            };
+            if (entry.OnClick is { } act) item.Click += (_, _) => act();
+            flyout.Items.Add(item);
+        }
+        flyout.FlyoutPresenterClasses.Add("icue-menu");
+        return flyout;
+    }
+}
+
+/// <summary>
+/// The macro editor's own surfaces and geometry.
+///
+/// Measured off _reference/icue/macros/iCUE_Macro.png (1928x1080) by pixel
+/// scan, not by eye. Kept in one place so the dialog reads as layout rather
+/// than as arithmetic, and so no number has to be re-derived from the
+/// screenshot a second time.
+///
+/// A horizontal scan across the SELECTED row (y=880) settles how selection
+/// works, which is not guessable from looking:
+///
+///   848      well border, 1px #4B4B4B
+///   849-855  well padding, 7px
+///   856-911  #4B4B4B  - the number+kebab band
+///   912-919  #2A2A2A  - gap, NOT covered by the selection
+///   920-943  #4B4B4B  - chip 1 (it is #1F1F1F on an unselected row)
+///   944-951  gap ... and so on, 24px chips on a 32px pitch
+///
+/// So selecting a row does NOT paint one continuous bar: the number band
+/// lights up and each chip's own fill lifts to the same value, with the gaps
+/// staying well-coloured. Painting a single band instead is visibly wrong.
+/// </summary>
+public static class MacroStyle
+{
+    // --- surfaces ------------------------------------------------------------
+    /// <summary>The macro card, darker than the page it sits on - the same
+    /// inward-going depth order as the dashboard's tiles.</summary>
+    public static readonly Color Card       = Color.FromRgb(0x13, 0x13, 0x13);
+    /// <summary>The event list well.</summary>
+    public static readonly Color Well       = Color.FromRgb(0x2B, 0x2B, 0x2B);
+    /// <summary>1px, and the ONLY border in this surface. Chips and rows have
+    /// none - fill contrast is their whole edge.</summary>
+    public static readonly Color WellBorder = Color.FromRgb(0x4B, 0x4B, 0x4B);
+    public static readonly Color Chip       = Color.FromRgb(0x1F, 0x1F, 0x1F);
+    public static readonly Color ChipText   = Color.FromRgb(0xC0, 0xC0, 0xC0);
+    /// <summary>Selected row: the number band, and every chip on it.</summary>
+    public static readonly Color RowOn      = Color.FromRgb(0x4B, 0x4B, 0x4B);
+    public static readonly Color TabTrack   = Color.FromRgb(0x2B, 0x2B, 0x2B);
+    public static readonly Color TabOn      = Color.FromRgb(0x4B, 0x4B, 0x4B);
+    public static readonly Color TabOnText  = Color.FromRgb(0xEC, 0xEC, 0xEC);
+    public static readonly Color TabOffText = Color.FromRgb(0x77, 0x77, 0x77);
+
+    public static readonly IBrush CardBrush       = new SolidColorBrush(Card);
+    public static readonly IBrush WellBrush       = new SolidColorBrush(Well);
+    public static readonly IBrush WellBorderBrush = new SolidColorBrush(WellBorder);
+    public static readonly IBrush ChipBrush       = new SolidColorBrush(Chip);
+    public static readonly IBrush ChipTextBrush   = new SolidColorBrush(ChipText);
+    public static readonly IBrush RowOnBrush      = new SolidColorBrush(RowOn);
+    public static readonly IBrush TabTrackBrush   = new SolidColorBrush(TabTrack);
+    public static readonly IBrush TabOnBrush      = new SolidColorBrush(TabOn);
+    public static readonly IBrush TabOnTextBrush  = new SolidColorBrush(TabOnText);
+    public static readonly IBrush TabOffTextBrush = new SolidColorBrush(TabOffText);
+
+    // --- geometry, in device-independent units -------------------------------
+    // ⛔ Units, never pixels on a Canvas. These were measured at 100% scale and
+    // a hit target expressed in a scaled control's own units is not what the
+    // finger meets - the trap that made a 6-unit grab zone 4 real px.
+    /// <summary>Row height. The pitch is this plus <see cref="RowGap"/>.</summary>
+    public const double RowHeight = 24;
+    public const double RowGap    = 4;
+    /// <summary>Between the well's border and the first row.</summary>
+    public const double WellPad   = 7;
+    public const double ChipSize  = 24;
+    public const double ChipGap   = 8;
+    /// <summary>The number+kebab band: 56 units, of which the number takes 30.</summary>
+    public const double NumberBand = 56;
+    public const double NumberCol  = 30;
+    public const double Radius     = 3;
+
+    /// <summary>
+    /// One chip. iCUE's chips are square by default and GROW to fit their
+    /// content - the `Q` chip is 24 wide, the `400 ms` chip is 46 - so this is
+    /// a minimum, not a size.
+    /// </summary>
+    public static Border ChipBox(Control content, IBrush? fill = null) => new()
+    {
+        Background = fill ?? ChipBrush,
+        CornerRadius = new CornerRadius(Radius),
+        Height = ChipSize,
+        MinWidth = ChipSize,
+        Padding = new Thickness(6, 0, 6, 0),
+        Child = content,
+        HorizontalAlignment = HorizontalAlignment.Left,
+    };
+
+    /// <summary>Text inside a chip, at the measured weight and colour.</summary>
+    public static TextBlock ChipLabel(string text) => new()
+    {
+        Text = text,
+        Foreground = ChipTextBrush,
+        FontSize = 12,
+        HorizontalAlignment = HorizontalAlignment.Center,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+
+    /// <summary>
+    /// iCUE's segmented tab strip: a #2B2B2B track, the selected segment raised
+    /// to #4B4B4B with near-white text, 1px dividers between segments.
+    ///
+    /// ⛔ It is NOT white-with-dark-text, which is what it looks like at a
+    /// glance and what a first reading of the same screenshot claimed. The one
+    /// place iCUE inverts is the context menu.
+    /// </summary>
+    public static Control Segmented(string[] labels, int selected, Action<int> pick, double segment = 110)
+    {
+        var track = new Border
+        {
+            Background = TabTrackBrush,
+            CornerRadius = new CornerRadius(Radius),
+            Height = 24,
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        for (int i = 0; i < labels.Length; i++)
+        {
+            if (i > 0)
+                row.Children.Add(new Border
+                {
+                    Width = 1, Background = WellBorderBrush,
+                    Margin = new Thickness(0, 4, 0, 4),
+                });
+            int index = i;
+            bool on = i == selected;
+            var seg = new Border
+            {
+                Background = on ? TabOnBrush : Brushes.Transparent,
+                CornerRadius = new CornerRadius(
+                    i == 0 ? Radius : 0, i == labels.Length - 1 ? Radius : 0,
+                    i == labels.Length - 1 ? Radius : 0, i == 0 ? Radius : 0),
+                Width = segment,
+                Child = new TextBlock
+                {
+                    Text = labels[i],
+                    Foreground = on ? TabOnTextBrush : TabOffTextBrush,
+                    FontSize = 12,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+            };
+            seg.PointerPressed += (_, e) => { e.Handled = true; pick(index); };
+            row.Children.Add(seg);
+        }
+        track.Child = row;
+        return track;
+    }
 }

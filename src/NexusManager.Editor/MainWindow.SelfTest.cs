@@ -335,6 +335,73 @@ public sealed partial class MainWindow
             Console.Out.WriteLine($"[selftest] tickrate FAILED: {ex.GetType().Name}: {ex.Message}");
         }
 
+        // ⛔ The macro dialog has to BUILD and LAY OUT, not merely compile. Two
+        // classes of failure in this codebase only appear at that point: a
+        // control added to two parents, and a template handed a null item. Both
+        // shipped past a green build and crashed the app on sight.
+        //
+        // ⛔ It is built and measured, never RUN. A self test that fired a macro
+        // would type into this machine.
+        try
+        {
+            var spec = new NexusManager.Actions.MacroSpec
+            {
+                Steps =
+                [
+                    new NexusManager.Actions.MacroStep
+                        { Kind = NexusManager.Actions.MacroStepKind.KeyDown, Key = "ctrl" },
+                    new NexusManager.Actions.MacroStep
+                        { Kind = NexusManager.Actions.MacroStepKind.Tap, Key = "c" },
+                    new NexusManager.Actions.MacroStep
+                        { Kind = NexusManager.Actions.MacroStepKind.Delay, DelayMs = 200 },
+                ],
+            };
+            var dialog = MacroEditorWindow.ForTest(spec, _actions);
+            (dialog.Content as Control)?.Measure(new Avalonia.Size(640, 560));
+            int rows = dialog.Rows.Count;
+            dialog.SelectTab(1);                       // the General tab must build too
+            (dialog.Content as Control)?.Measure(new Avalonia.Size(640, 560));
+            dialog.SelectTab(0);
+            (dialog.Content as Control)?.Measure(new Avalonia.Size(640, 560));
+
+            if (rows != 3 || dialog.Rows.Count != 3)
+            {
+                failures++;
+                Console.Out.WriteLine($"[selftest] macro      FAILED: 3 steps drew {rows} row(s), "
+                                    + $"{dialog.Rows.Count} after a tab round trip");
+            }
+            else Console.Out.WriteLine("[selftest] macro      OK");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.Out.WriteLine($"[selftest] macro      FAILED: {ex.GetType().Name}: {ex.Message}");
+        }
+
+        // ⛔ The key picker is built from an ORDER WRITTEN OUT BY HAND over
+        // UinputKeyboard.KeyCodes, so it has two ways to be wrong that nothing
+        // else would catch: an alias listed twice (esc and escape are one key),
+        // and a code never listed at all - which is a key that works in a config
+        // file and cannot be picked in the app.
+        try
+        {
+            var codes = KeyCatalog.All.Select(e => e.Code).ToList();
+            int distinct = codes.Distinct().Count();
+            if (codes.Count != distinct || KeyCatalog.Missing.Count > 0)
+            {
+                failures++;
+                Console.Out.WriteLine($"[selftest] keys       FAILED: {codes.Count} entries over "
+                                    + $"{distinct} codes; not listed: "
+                                    + $"{(KeyCatalog.Missing.Count == 0 ? "none" : string.Join(", ", KeyCatalog.Missing))}");
+            }
+            else Console.Out.WriteLine($"[selftest] keys       OK ({distinct} keys, no aliases, none missing)");
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.Out.WriteLine($"[selftest] keys       FAILED: {ex.GetType().Name}: {ex.Message}");
+        }
+
         Console.Out.WriteLine(failures == 0
             ? "[selftest] PASS"
             : $"[selftest] FAIL ({failures})");

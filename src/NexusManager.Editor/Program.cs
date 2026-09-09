@@ -27,8 +27,21 @@ internal static class Program
             App.ProbeDrag = args.Contains("--probe-drag");
             App.ProbeAction = args.Contains("--probe-action");
             App.ProbeVisualizer = args.Contains("--probe-visualizer");
-            if (App.ProbeDrag || App.ProbeAction || App.ProbeVisualizer) { App.NoDevice = true; App.StartHidden = true; }
+            App.ProbeMacro = args.Contains("--probe-macro");
+            int packAt = Array.IndexOf(args, "--probe-macro");
+            if (packAt >= 0 && packAt + 1 < args.Length && !args[packAt + 1].StartsWith("--"))
+                App.ProbeMacroPack = args[packAt + 1];
+            if (App.ProbeDrag || App.ProbeAction || App.ProbeVisualizer || App.ProbeMacro)
+                { App.NoDevice = true; App.StartHidden = true; }
             if (App.SelfTest) App.StartHidden = true;
+            // ⛔ ONE list of what counts as a diagnostic. It was written out
+            // twice below and --probe-visualizer had already been left off
+            // both, so a probe refused by the lock would have raised the
+            // running app's window and exited 0 - the same clean-exit defect
+            // that made --selftest unable to fail, in a newer place.
+            bool diagnostic = App.SelfTest || App.ProbeDrag || App.ProbeAction
+                              || App.ProbeVisualizer || App.ProbeMacro;
+            App.ReadOnly = diagnostic && !App.ProbeAction;
             // ⛔ SINGLE INSTANCE, NO EXEMPTIONS. Decided before Avalonia starts.
             //
             // Two copies do not merely duplicate a tray icon: they both drive the
@@ -58,7 +71,7 @@ internal static class Program
                 string holder = SingleInstance.DescribeHolder();
                 // Launching again is how people ask for the window back, so treat
                 // it as exactly that rather than as an error.
-                if (!App.SelfTest && !App.ProbeDrag && !App.ProbeAction && SingleInstance.Signal("show"))
+                if (!diagnostic && SingleInstance.Signal("show"))
                 {
                     Console.Error.WriteLine(
                         "Nexus Manager is already running - bringing its window to the front.");
@@ -72,7 +85,7 @@ internal static class Program
                 // and handed back a clean exit, indistinguishable from a full
                 // pass. That is the same defect as the exit code `timeout` was
                 // supplying, in a different place.
-                Environment.Exit(App.SelfTest || App.ProbeDrag || App.ProbeAction ? 2 : 1);
+                Environment.Exit(diagnostic ? 2 : 1);
                 return;
             }
 

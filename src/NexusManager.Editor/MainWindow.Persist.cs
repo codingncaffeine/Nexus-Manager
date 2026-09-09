@@ -32,6 +32,17 @@ public sealed partial class MainWindow
     /// <summary>Called after any edit that changes what the panel draws.</summary>
     private void QueueAutosave()
     {
+        // ⛔ A READ-ONLY DIAGNOSTIC MUST NOT WRITE THE USER'S CONFIG.
+        //
+        // The probes deliberately mutate the model to measure the editor and
+        // put it back afterwards - but edits AUTOSAVE, and the panel rebuild
+        // that follows a restore raises a TextChanged of its own once the
+        // _building guard has dropped. --probe-macro re-armed this timer that
+        // way AFTER it had stopped it, and screens.json was rewritten on the
+        // way out. The content happened to be identical; that it was written
+        // at all is the fault. --probe-action is deliberately NOT read-only:
+        // reaching the file is the thing it measures.
+        if (App.ReadOnly) return;
         if (!_ready || _building) return;
         WireAutosave();
         _autosave.Stop();      // restart the window on every keystroke or drag pixel

@@ -61,7 +61,10 @@ public sealed class SystemAction
         ActionKind.Media => $"media {Target}",
         ActionKind.Brightness => $"brightness {Target} {Amount:0}%",
         ActionKind.Key => $"press {Target}",
-        ActionKind.Macro => Macro is null ? "macro (empty)" : $"macro: {Macro}",
+        // ⛔ Zero steps is empty too, not "macro: 0 steps". A button that runs
+        // nothing must not read like one that works.
+        ActionKind.Macro => Macro is null || Macro.Steps.Count == 0
+            ? "macro (empty)" : $"macro: {Macro}",
         _ => Kind.ToString(),
     };
 }
